@@ -72,7 +72,7 @@ func genEntity(s *parse.Schema, e parse.Entity) ([]byte, error) {
 	}
 	g.pf("}{\n")
 	for _, f := range e.Fields {
-		g.pf("\t%s: %s(%q),\n", f.GoName, descCtor(entT, f), f.Col)
+		g.pf("\t%s: %s(%q, %q),\n", f.GoName, descCtor(entT, f), e.Table, f.Col)
 	}
 	for _, r := range hasManys {
 		fkCol, err := fkColOf(s, r)

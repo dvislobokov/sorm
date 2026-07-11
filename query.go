@@ -158,7 +158,7 @@ func (q QueryBuilder[E]) buildSelect(selectList string) (string, []any) {
 			if i > 0 {
 				w.raw(", ")
 			}
-			w.ident(o.col)
+			w.col(o.ref)
 			if o.desc {
 				w.raw(" DESC")
 			}

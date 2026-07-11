@@ -18,11 +18,11 @@ var Article = struct {
 	Views       sorm.OrdCol[models.Article, int]
 	PublishedAt sorm.OrdCol[models.Article, time.Time]
 }{
-	ID:          sorm.NewOrdCol[models.Article, int64]("id"),
-	AuthorID:    sorm.NewOrdCol[models.Article, int64]("author_id"),
-	Title:       sorm.NewStrCol[models.Article]("title"),
-	Views:       sorm.NewOrdCol[models.Article, int]("views"),
-	PublishedAt: sorm.NewOrdCol[models.Article, time.Time]("published_at"),
+	ID:          sorm.NewOrdCol[models.Article, int64]("articles", "id"),
+	AuthorID:    sorm.NewOrdCol[models.Article, int64]("articles", "author_id"),
+	Title:       sorm.NewStrCol[models.Article]("articles", "title"),
+	Views:       sorm.NewOrdCol[models.Article, int]("articles", "views"),
+	PublishedAt: sorm.NewOrdCol[models.Article, time.Time]("articles", "published_at"),
 }
 
 type articleSnap struct {

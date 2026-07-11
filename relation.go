@@ -41,14 +41,14 @@ func (r HasMany[E, C]) None(preds ...Pred[C]) Pred[E] {
 
 func (r HasMany[E, C]) exists(preds []Pred[C], not bool) Pred[E] {
 	pm, cm := metaFor[E](), metaFor[C]()
-	return Pred[E]{existsNode{
+	return pred[E](existsNode{
 		childTable:  cm.Table,
 		fkCol:       r.fkCol,
 		parentTable: pm.Table,
 		parentPK:    pm.PK,
 		preds:       nodesOf(preds),
 		not:         not,
-	}}
+	})
 }
 
 // Include — eager loading детей (split-стратегия: отдельный запрос
@@ -71,7 +71,7 @@ func (r HasMany[E, C]) Include(preds ...Pred[C]) IncludeSpec[E] {
 		}
 
 		cq := Query[C](db).
-			Where(Pred[C]{inNode{r.fkCol, keys, false}}).
+			Where(pred[C](inNode{colRef{name: r.fkCol}, keys, false})).
 			Where(preds...)
 		cq.sess = sess // Track трекает и детей
 		children, err := cq.All(ctx)

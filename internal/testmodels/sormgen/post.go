@@ -15,10 +15,10 @@ var Post = struct {
 	Title    sorm.StrCol[models.Post]
 	Body     sorm.StrCol[models.Post]
 }{
-	ID:       sorm.NewOrdCol[models.Post, int64]("id"),
-	AuthorID: sorm.NewOrdCol[models.Post, int64]("author_id"),
-	Title:    sorm.NewStrCol[models.Post]("title"),
-	Body:     sorm.NewStrCol[models.Post]("body"),
+	ID:       sorm.NewOrdCol[models.Post, int64]("posts", "id"),
+	AuthorID: sorm.NewOrdCol[models.Post, int64]("posts", "author_id"),
+	Title:    sorm.NewStrCol[models.Post]("posts", "title"),
+	Body:     sorm.NewStrCol[models.Post]("posts", "body"),
 }
 
 type postSnap struct {

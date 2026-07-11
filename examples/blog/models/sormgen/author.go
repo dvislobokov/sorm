@@ -21,13 +21,13 @@ var Author = struct {
 	Version  sorm.OrdCol[models.Author, int64]
 	Articles sorm.HasMany[models.Author, models.Article]
 }{
-	ID:       sorm.NewOrdCol[models.Author, int64]("id"),
-	Name:     sorm.NewStrCol[models.Author]("name"),
-	Email:    sorm.NewStrCol[models.Author]("email"),
-	Active:   sorm.NewCol[models.Author, bool]("active"),
-	Rating:   sorm.NewOrdCol[models.Author, float64]("rating"),
-	JoinedAt: sorm.NewOrdCol[models.Author, time.Time]("joined_at"),
-	Version:  sorm.NewOrdCol[models.Author, int64]("version"),
+	ID:       sorm.NewOrdCol[models.Author, int64]("authors", "id"),
+	Name:     sorm.NewStrCol[models.Author]("authors", "name"),
+	Email:    sorm.NewStrCol[models.Author]("authors", "email"),
+	Active:   sorm.NewCol[models.Author, bool]("authors", "active"),
+	Rating:   sorm.NewOrdCol[models.Author, float64]("authors", "rating"),
+	JoinedAt: sorm.NewOrdCol[models.Author, time.Time]("authors", "joined_at"),
+	Version:  sorm.NewOrdCol[models.Author, int64]("authors", "version"),
 	Articles: sorm.NewHasMany[models.Author, models.Article](
 		"author_id",
 		func(e *models.Author) any { return e.ID },

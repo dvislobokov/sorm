@@ -27,17 +27,17 @@ var User = struct {
 	Version   sorm.OrdCol[models.User, int64]
 	Posts     sorm.HasMany[models.User, models.Post]
 }{
-	ID:        sorm.NewOrdCol[models.User, int64]("id"),
-	Email:     sorm.NewStrCol[models.User]("email"),
-	Name:      sorm.NewStrCol[models.User]("name"),
-	Nickname:  sorm.NewStrCol[models.User]("nickname"),
-	Active:    sorm.NewCol[models.User, bool]("active"),
-	Age:       sorm.NewOrdCol[models.User, int]("age"),
-	Balance:   sorm.NewOrdCol[models.User, float64]("balance"),
-	Avatar:    sorm.NewBytesCol[models.User]("avatar"),
-	CreatedAt: sorm.NewOrdCol[models.User, time.Time]("created_at"),
-	DeletedAt: sorm.NewOrdCol[models.User, time.Time]("deleted_at"),
-	Version:   sorm.NewOrdCol[models.User, int64]("version"),
+	ID:        sorm.NewOrdCol[models.User, int64]("users", "id"),
+	Email:     sorm.NewStrCol[models.User]("users", "email"),
+	Name:      sorm.NewStrCol[models.User]("users", "name"),
+	Nickname:  sorm.NewStrCol[models.User]("users", "nickname"),
+	Active:    sorm.NewCol[models.User, bool]("users", "active"),
+	Age:       sorm.NewOrdCol[models.User, int]("users", "age"),
+	Balance:   sorm.NewOrdCol[models.User, float64]("users", "balance"),
+	Avatar:    sorm.NewBytesCol[models.User]("users", "avatar"),
+	CreatedAt: sorm.NewOrdCol[models.User, time.Time]("users", "created_at"),
+	DeletedAt: sorm.NewOrdCol[models.User, time.Time]("users", "deleted_at"),
+	Version:   sorm.NewOrdCol[models.User, int64]("users", "version"),
 	Posts: sorm.NewHasMany[models.User, models.Post](
 		"author_id",
 		func(e *models.User) any { return e.ID },

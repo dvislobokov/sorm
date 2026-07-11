@@ -245,6 +245,58 @@ func setBasedAndRaw(ctx context.Context, pool *pgxpool.Pool) error {
 	for _, st := range stats {
 		fmt.Printf("stat: %-8s статей=%d max=%d\n", st.Name, st.Articles, st.MaxViews)
 	}
+
+	return projections(ctx, pool)
+}
+
+// projections — типизированные GROUP BY/HAVING/JOIN без строк SQL.
+func projections(ctx context.Context, pool *pgxpool.Pool) error {
+	fmt.Println("\n== 6. Проекции: типизированные агрегации и JOIN ==")
+
+	// Тот же агрегат, что в raw-секции, но проверенный компилятором:
+	// опечатка в колонке или несовпадение структуры результата — ошибка
+	// до похода в БД.
+	type authorStat struct {
+		Name     string
+		N        int64
+		MaxViews int64 `sorm:"max_views"`
+	}
+	stats, err := sorm.Project[authorStat](
+		sorm.From[models.Author](pool).
+			Join(a.Articles.InnerJoin()).
+			GroupBy(a.Name).
+			Having(sorm.CountAll[models.Author]().Gte(1)).
+			OrderBy(a.Name.Asc()),
+		sorm.Field(a.Name),
+		sorm.As(sorm.CountAll[models.Author](), "n"),
+		sorm.As(sorm.Max[models.Author](ar.Views), "max_views"),
+	).All(ctx)
+	if err != nil {
+		return err
+	}
+	for _, st := range stats {
+		fmt.Printf("proj: %-8s статей=%d max=%d\n", st.Name, st.N, st.MaxViews)
+	}
+
+	// LEFT JOIN по связи: авторы без статей тоже в результате (count = 0).
+	type withCount struct {
+		Name string
+		N    int64
+	}
+	all, err := sorm.Project[withCount](
+		sorm.From[models.Author](pool).
+			Join(a.Articles.LeftJoin()).
+			GroupBy(a.Name).
+			OrderBy(a.Name.Asc()),
+		sorm.Field(a.Name),
+		sorm.As(sorm.Count[models.Author](ar.ID), "n"),
+	).All(ctx)
+	if err != nil {
+		return err
+	}
+	for _, row := range all {
+		fmt.Printf("left join: %-8s статей=%d\n", row.Name, row.N)
+	}
 	return nil
 }
 
