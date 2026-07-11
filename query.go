@@ -10,15 +10,21 @@ import (
 	"sorm/dialect/pg"
 )
 
-// defaultDialect — PG-only в MVP; при мультидиалектности диалект приедет
-// из драйверного адаптера DB.
+// defaultDialect — фолбэк для инспекции SQL без подключения (Query[E](nil).ToSQL()).
 var defaultDialect dialect.Dialect = pg.Dialect{}
+
+func dialectOf(db DB) dialect.Dialect {
+	if db == nil {
+		return defaultDialect
+	}
+	return db.Dialect()
+}
 
 // Query начинает типизированный запрос по сущности E.
 // Билдер иммутабелен: каждый метод возвращает копию, переиспользование
 // базового билдера безопасно (никакого state-leak между запросами).
 func Query[E any](db DB) QueryBuilder[E] {
-	return QueryBuilder[E]{db: db, meta: metaFor[E](), d: defaultDialect}
+	return QueryBuilder[E]{db: db, meta: metaFor[E](), d: dialectOf(db)}
 }
 
 type QueryBuilder[E any] struct {

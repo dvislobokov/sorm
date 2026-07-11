@@ -3,11 +3,16 @@
 // реализацией этого интерфейса без изменения рантайма.
 package dialect
 
-// Dialect отвечает только за текстовые различия SQL. Стратегия батчирования
-// и RETURNING-семантика живут в драйверных адаптерах.
+// Dialect отвечает за текстовые различия SQL; стратегия батчирования живёт
+// в драйверных адаптерах.
 type Dialect interface {
+	// Name — имя диалекта: "postgres", "mysql", "sqlite".
+	Name() string
 	// Placeholder возвращает плейсхолдер n-го аргумента (нумерация с 1): $1 или ?.
 	Placeholder(n int) string
 	// QuoteIdent экранирует идентификатор (таблицу, колонку).
 	QuoteIdent(s string) string
+	// ReturningSupported — INSERT ... RETURNING доступен (PG; MySQL — нет,
+	// SQLite — намеренно LastInsertId-путь, общий с MySQL).
+	ReturningSupported() bool
 }

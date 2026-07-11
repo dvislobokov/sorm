@@ -7,6 +7,8 @@ import (
 	"reflect"
 	"slices"
 	"strconv"
+
+	"sorm/dialect"
 )
 
 // Проекционный слой: GROUP BY, HAVING, агрегации, произвольные JOIN.
@@ -18,11 +20,12 @@ import (
 // From начинает проекционный запрос от таблицы сущности E.
 func From[E any](db DB) FromBuilder[E] {
 	m := metaFor[E]()
-	return FromBuilder[E]{db: db, table: m.Table}
+	return FromBuilder[E]{db: db, d: dialectOf(db), table: m.Table}
 }
 
 type FromBuilder[E any] struct {
 	db     DB
+	d      dialect.Dialect
 	table  string
 	joins  []joinClause
 	preds  []Pred[E]
@@ -313,7 +316,7 @@ func Project[R any, E any](q FromBuilder[E], exprs ...SelectExpr[E]) ProjQuery[R
 }
 
 func buildProjection[E any](q FromBuilder[E], exprs []SelectExpr[E]) (string, []any) {
-	w := newSQLWriter(defaultDialect)
+	w := newSQLWriter(q.d)
 	w.qualify = true
 
 	w.raw("SELECT ")

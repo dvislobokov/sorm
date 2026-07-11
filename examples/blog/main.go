@@ -7,6 +7,7 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"log"
@@ -14,8 +15,12 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	_ "modernc.org/sqlite"
 
 	"sorm"
+	"sorm/dialect/lite"
+	"sorm/driver/pgxd"
+	"sorm/driver/sqld"
 	"sorm/examples/blog/models"
 	gen "sorm/examples/blog/models/sormgen"
 )
@@ -76,14 +81,15 @@ func live(ctx context.Context, dsn string) error {
 		return err
 	}
 	defer pool.Close()
+	db := pgxd.Wrap(pool) // единственная точка привязки к драйверу
 
-	if err := seed(ctx, pool); err != nil {
+	if err := seed(ctx, db); err != nil {
 		return err
 	}
 
 	fmt.Println("\n== 2. Живые запросы ==")
 
-	active, err := sorm.Query[models.Author](pool).
+	active, err := sorm.Query[models.Author](db).
 		Where(a.Active.Eq(true)).
 		OrderBy(a.Rating.Desc()).
 		All(ctx)
@@ -94,20 +100,20 @@ func live(ctx context.Context, dsn string) error {
 		fmt.Printf("автор: %-8s rating=%.1f\n", au.Name, au.Rating)
 	}
 
-	popular, err := sorm.Query[models.Article](pool).Where(ar.Views.Gte(1000)).Count(ctx)
+	popular, err := sorm.Query[models.Article](db).Where(ar.Views.Gte(1000)).Count(ctx)
 	if err != nil {
 		return err
 	}
 	fmt.Println("статей с 1000+ просмотров:", popular)
 
-	_, err = sorm.Query[models.Author](pool).Where(a.Name.Eq("нет такого")).One(ctx)
+	_, err = sorm.Query[models.Author](db).Where(a.Name.Eq("нет такого")).One(ctx)
 	fmt.Println("One по несуществующему:", err) // sorm: not found — единая семантика
 
 	fmt.Println("\n== 3. Eager loading (Include, split-стратегия) ==")
 
 	// Авторы, у которых есть статья с 1000+ просмотров, вместе с
 	// опубликованными статьями каждого.
-	authors, err := sorm.Query[models.Author](pool).
+	authors, err := sorm.Query[models.Author](db).
 		Where(a.Articles.Any(ar.Views.Gte(1000))).
 		With(a.Articles.Include(ar.PublishedAt.IsNotNull())).
 		OrderBy(a.Name.Asc()).
@@ -123,7 +129,7 @@ func live(ctx context.Context, dsn string) error {
 	}
 
 	// Загруженная пустая связь — пустой слайс, НЕ nil («забыл Include» отличим от «нет данных»).
-	all, err := sorm.Query[models.Author](pool).With(a.Articles.Include()).All(ctx)
+	all, err := sorm.Query[models.Author](db).With(a.Articles.Include()).All(ctx)
 	if err != nil {
 		return err
 	}
@@ -131,15 +137,15 @@ func live(ctx context.Context, dsn string) error {
 		fmt.Printf("%s: articles nil=%v len=%d\n", au.Name, au.Articles == nil, len(au.Articles))
 	}
 
-	return session(ctx, pool)
+	return session(ctx, db)
 }
 
 // session — главный дифференциатор sorm: Unit of Work с change tracking.
-func session(ctx context.Context, pool *pgxpool.Pool) error {
+func session(ctx context.Context, db sorm.DB) error {
 	fmt.Println("\n== 4. Сессия: Unit of Work ==")
 
 	// Новый граф: FK задаётся навигацией, порядок вставки и fixup — за sorm.
-	s := sorm.NewSession(pool)
+	s := sorm.NewSession(db)
 	max := &models.Author{Name: "Max", Email: "max@x.io", Active: true, Rating: 4.0, JoinedAt: time.Now()}
 	art1 := &models.Article{Author: max, Title: "Снапшот-трекинг в Go", Views: 0}
 	art2 := &models.Article{Author: max, Title: "pgx.Batch на практике", Views: 0}
@@ -153,7 +159,7 @@ func session(ctx context.Context, pool *pgxpool.Pool) error {
 
 	// Track → мутация обычным Go-кодом → SaveChanges: UPDATE только
 	// изменённых колонок, version-предикат бесплатно.
-	s2 := sorm.NewSession(pool)
+	s2 := sorm.NewSession(db)
 	loaded, err := sorm.Track[models.Author](s2).
 		Where(gen.Author.Email.Eq("max@x.io")).
 		With(gen.Author.Articles.Include()).
@@ -170,7 +176,7 @@ func session(ctx context.Context, pool *pgxpool.Pool) error {
 		loaded.Rating, loaded.Version, loaded.Articles[0].Views)
 
 	// Optimistic concurrency: конкурентное изменение → типизированный конфликт.
-	sA, sB := sorm.NewSession(pool), sorm.NewSession(pool)
+	sA, sB := sorm.NewSession(db), sorm.NewSession(db)
 	mA, _ := sorm.Track[models.Author](sA).Where(gen.Author.Email.Eq("max@x.io")).One(ctx)
 	mB, _ := sorm.Track[models.Author](sB).Where(gen.Author.Email.Eq("max@x.io")).One(ctx)
 	mA.Rating = 5.0
@@ -185,7 +191,7 @@ func session(ctx context.Context, pool *pgxpool.Pool) error {
 	}
 
 	// Remove: дети удаляются раньше родителя автоматически.
-	s3 := sorm.NewSession(pool)
+	s3 := sorm.NewSession(db)
 	gone, err := sorm.Track[models.Author](s3).
 		Where(gen.Author.Email.Eq("max@x.io")).
 		With(gen.Author.Articles.Include()).
@@ -200,17 +206,17 @@ func session(ctx context.Context, pool *pgxpool.Pool) error {
 	}
 	fmt.Println("автор и статьи удалены одним SaveChanges (порядок — за sorm)")
 
-	return setBasedAndRaw(ctx, pool)
+	return setBasedAndRaw(ctx, db)
 }
 
 // setBasedAndRaw — операции без сессии: массовые UPDATE/DELETE и raw-escape.
-func setBasedAndRaw(ctx context.Context, pool *pgxpool.Pool) error {
+func setBasedAndRaw(ctx context.Context, db sorm.DB) error {
 	fmt.Println("\n== 5. Set-based операции и raw SQL ==")
 
 	// Массовый UPDATE: типизированные присваивания, автоинкремент version.
 	// Update без Where не скомпилируется в ошибку молча — вернёт guard-ошибку,
 	// полная таблица только через явный AllRows().
-	n, err := sorm.Update[models.Article](pool).
+	n, err := sorm.Update[models.Article](db).
 		Set(gen.Article.Views.Set(0)).
 		Where(gen.Article.PublishedAt.IsNull()).
 		Exec(ctx)
@@ -220,7 +226,7 @@ func setBasedAndRaw(ctx context.Context, pool *pgxpool.Pool) error {
 	fmt.Printf("обнулены просмотры у %d черновиков\n", n)
 
 	// Raw в сущности: несоответствие колонок — ScanError, не полупустой объект.
-	top, err := sorm.Raw[models.Article](pool,
+	top, err := sorm.Raw[models.Article](db,
 		`SELECT * FROM articles WHERE views >= $1 ORDER BY views DESC`, 1000).All(ctx)
 	if err != nil {
 		return err
@@ -235,7 +241,7 @@ func setBasedAndRaw(ctx context.Context, pool *pgxpool.Pool) error {
 		Articles int64 `sorm:"n"`
 		MaxViews int64 `sorm:"max_views"`
 	}
-	stats, err := sorm.RawAs[authorStat](pool, `
+	stats, err := sorm.RawAs[authorStat](db, `
 		SELECT a.name, count(*) AS n, max(ar.views) AS max_views
 		FROM authors a JOIN articles ar ON ar.author_id = a.id
 		GROUP BY a.name ORDER BY max_views DESC`).All(ctx)
@@ -246,11 +252,11 @@ func setBasedAndRaw(ctx context.Context, pool *pgxpool.Pool) error {
 		fmt.Printf("stat: %-8s статей=%d max=%d\n", st.Name, st.Articles, st.MaxViews)
 	}
 
-	return projections(ctx, pool)
+	return projections(ctx, db)
 }
 
 // projections — типизированные GROUP BY/HAVING/JOIN без строк SQL.
-func projections(ctx context.Context, pool *pgxpool.Pool) error {
+func projections(ctx context.Context, db sorm.DB) error {
 	fmt.Println("\n== 6. Проекции: типизированные агрегации и JOIN ==")
 
 	// Тот же агрегат, что в raw-секции, но проверенный компилятором:
@@ -262,7 +268,7 @@ func projections(ctx context.Context, pool *pgxpool.Pool) error {
 		MaxViews int64 `sorm:"max_views"`
 	}
 	stats, err := sorm.Project[authorStat](
-		sorm.From[models.Author](pool).
+		sorm.From[models.Author](db).
 			Join(a.Articles.InnerJoin()).
 			GroupBy(a.Name).
 			Having(sorm.CountAll[models.Author]().Gte(1)).
@@ -284,7 +290,7 @@ func projections(ctx context.Context, pool *pgxpool.Pool) error {
 		N    int64
 	}
 	all, err := sorm.Project[withCount](
-		sorm.From[models.Author](pool).
+		sorm.From[models.Author](db).
 			Join(a.Articles.LeftJoin()).
 			GroupBy(a.Name).
 			OrderBy(a.Name.Asc()),
@@ -297,10 +303,61 @@ func projections(ctx context.Context, pool *pgxpool.Pool) error {
 	for _, row := range all {
 		fmt.Printf("left join: %-8s статей=%d\n", row.Name, row.N)
 	}
+
+	return multiDialect(ctx)
+}
+
+// multiDialect — тот же код sorm поверх SQLite in-memory: меняется только
+// адаптер (sqld.Wrap вместо pgxd.Wrap). MySQL — так же, с dialect/my.
+func multiDialect(ctx context.Context) error {
+	fmt.Println("\n== 7. Мультидиалектность: SQLite in-memory ==")
+
+	sdb, err := sql.Open("sqlite", ":memory:")
+	if err != nil {
+		return err
+	}
+	defer sdb.Close()
+	sdb.SetMaxOpenConns(1)
+
+	for _, ddl := range []string{
+		`CREATE TABLE authors (
+			id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL,
+			email TEXT NOT NULL UNIQUE, active BOOLEAN NOT NULL, rating REAL NOT NULL,
+			joined_at DATETIME NOT NULL, version INTEGER NOT NULL
+		)`,
+		`CREATE TABLE articles (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			author_id INTEGER NOT NULL REFERENCES authors(id),
+			title TEXT NOT NULL, views INTEGER NOT NULL, published_at DATETIME
+		)`,
+	} {
+		if _, err := sdb.Exec(ddl); err != nil {
+			return err
+		}
+	}
+
+	db := sqld.Wrap(sdb, lite.Dialect{}) // единственное отличие от PG-пути
+
+	s := sorm.NewSession(db)
+	lo := &models.Author{Name: "Lo", Email: "lo@x.io", Active: true, Rating: 3.3, JoinedAt: time.Now()}
+	sorm.Add(s, lo)
+	sorm.Add(s, &models.Article{Author: lo, Title: "sqlite works", Views: 7})
+	if err := s.SaveChanges(ctx); err != nil {
+		return err
+	}
+
+	found, err := sorm.Query[models.Author](db).
+		Where(gen.Author.Articles.Any(gen.Article.Views.Gt(0))).
+		One(ctx)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("SQLite: автор %s (id=%d через LastInsertId), version=%d — тот же код, другой драйвер\n",
+		found.Name, found.ID, found.Version)
 	return nil
 }
 
-func seed(ctx context.Context, pool *pgxpool.Pool) error {
+func seed(ctx context.Context, db sorm.DB) error {
 	stmts := []string{
 		`DROP TABLE IF EXISTS articles`,
 		`DROP TABLE IF EXISTS authors`,
@@ -330,7 +387,7 @@ func seed(ctx context.Context, pool *pgxpool.Pool) error {
 			(2, 'Unit of Work в Go',     1500, now())`,
 	}
 	for _, s := range stmts {
-		if _, err := pool.Exec(ctx, s); err != nil {
+		if _, err := db.Exec(ctx, s); err != nil {
 			return fmt.Errorf("seed: %w", err)
 		}
 	}

@@ -9,6 +9,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"sorm"
+	"sorm/driver/pgxd"
 	models "sorm/internal/testmodels"
 	gen "sorm/internal/testmodels/sormgen"
 )
@@ -16,17 +17,18 @@ import (
 // Интеграционные тесты сессии: живой PostgreSQL.
 // Запуск: $env:SORM_TEST_DSN = 'postgres://postgres:postgres@localhost:15432/sorm_example'; go test ./...
 
-func testPool(t *testing.T) *pgxpool.Pool {
+func testPool(t *testing.T) sorm.DB {
 	t.Helper()
 	dsn := os.Getenv("SORM_TEST_DSN")
 	if dsn == "" {
 		t.Skip("SORM_TEST_DSN не задан — интеграционные тесты пропущены")
 	}
-	pool, err := pgxpool.New(context.Background(), dsn)
+	pgPool, err := pgxpool.New(context.Background(), dsn)
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(pool.Close)
+	t.Cleanup(pgPool.Close)
+	pool := pgxd.Wrap(pgPool)
 
 	ctx := context.Background()
 	for _, s := range []string{
@@ -244,13 +246,13 @@ func TestSessionAddValidation(t *testing.T) {
 	}
 }
 
-func seedAlice(t *testing.T, pool *pgxpool.Pool) {
+func seedAlice(t *testing.T, pool sorm.DB) {
 	t.Helper()
 	mustExec(t, pool, `INSERT INTO users (email, name, active, age, balance, created_at, version)
 		VALUES ('a@b.c', 'Alice', true, 30, 0, now(), 1)`)
 }
 
-func mustExec(t *testing.T, pool *pgxpool.Pool, sql string) {
+func mustExec(t *testing.T, pool sorm.DB, sql string) {
 	t.Helper()
 	if _, err := pool.Exec(context.Background(), sql); err != nil {
 		t.Fatal(err)

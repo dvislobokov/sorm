@@ -6,8 +6,6 @@ import (
 	"reflect"
 	"sort"
 
-	"github.com/jackc/pgx/v5"
-
 	"sorm/dialect"
 )
 
@@ -28,21 +26,20 @@ type flushPlan struct {
 
 type planStmt struct {
 	table string
-	queue func(b *pgx.Batch)
-	check func(res pgx.BatchResults) error
+	item  BatchItem
 }
 
 type insertNode struct {
 	seq   int
 	table string
 	deps  []any // указатели на Added-родителей
-	queue func(b *pgx.Batch) // вызывается после вставки родителей: FK-fixup внутри
-	scan  func(res pgx.BatchResults) error
+	// make вызывается после вставки родителей: FK-fixup внутри.
+	make func() BatchItem
 }
 
 func (s *Session) flush(ctx context.Context, db DB) (post func(), err error) {
 	p := &flushPlan{
-		d:         defaultDialect,
+		d:         db.Dialect(),
 		addedSet:  map[any]bool{},
 		inserts:   map[any]*insertNode{},
 		tableRefs: map[string][]string{},
@@ -59,10 +56,16 @@ func (s *Session) flush(ctx context.Context, db DB) (post func(), err error) {
 		}
 	}
 
-	// 1. DELETE (дети раньше родителей) + UPDATE — один батч, один roundtrip.
+	// 1. DELETE (дети раньше родителей) + UPDATE — один батч.
 	first := append(orderDeletes(p.deletes, p.tableRefs), p.updates...)
-	if err := sendBatch(ctx, db, first); err != nil {
-		return nil, err
+	if len(first) > 0 {
+		items := make([]BatchItem, len(first))
+		for i, st := range first {
+			items[i] = st.item
+		}
+		if err := db.ExecBatch(ctx, items); err != nil {
+			return nil, err
+		}
 	}
 
 	// 2. INSERT по уровням: уровень готов, когда все его Added-родители вставлены.
@@ -86,18 +89,11 @@ func (s *Session) flush(ctx context.Context, db DB) (post func(), err error) {
 		}
 		sort.Slice(level, func(i, j int) bool { return level[i].seq < level[j].seq })
 
-		b := &pgx.Batch{}
-		for _, n := range level {
-			n.queue(b) // queue-время: родители предыдущих уровней уже имеют PK
+		items := make([]BatchItem, len(level))
+		for i, n := range level {
+			items[i] = n.make() // make-время: родители предыдущих уровней уже имеют PK
 		}
-		br := db.SendBatch(ctx, b)
-		for _, n := range level {
-			if err := n.scan(br); err != nil {
-				br.Close()
-				return nil, err
-			}
-		}
-		if err := br.Close(); err != nil {
+		if err := db.ExecBatch(ctx, items); err != nil {
 			return nil, err
 		}
 		for _, n := range level {
@@ -131,24 +127,6 @@ func storesSorted(s *Session) []anyStore {
 		out[i] = x.st
 	}
 	return out
-}
-
-func sendBatch(ctx context.Context, db DB, stmts []planStmt) error {
-	if len(stmts) == 0 {
-		return nil
-	}
-	b := &pgx.Batch{}
-	for _, st := range stmts {
-		st.queue(b)
-	}
-	br := db.SendBatch(ctx, b)
-	for _, st := range stmts {
-		if err := st.check(br); err != nil {
-			br.Close()
-			return err
-		}
-	}
-	return br.Close()
 }
 
 // orderDeletes сортирует DELETE-стейтменты так, чтобы таблицы-дети шли
@@ -243,8 +221,7 @@ func (t *tracker[E]) planDelete(p *flushPlan, e *E, pk any) {
 	}
 	p.deletes = append(p.deletes, planStmt{
 		table: m.Table,
-		queue: func(b *pgx.Batch) { b.Queue(sql, args...) },
-		check: expectOneRow(m.Table, pk),
+		item:  BatchItem{SQL: sql, Args: args, Check: expectOneRow(m.Table, pk)},
 	})
 	p.post = append(p.post, func() {
 		delete(t.byPK, pk)
@@ -279,8 +256,7 @@ func (t *tracker[E]) planUpdate(p *flushPlan, r *rec[E], idxs []int) {
 
 	p.updates = append(p.updates, planStmt{
 		table: m.Table,
-		queue: func(b *pgx.Batch) { b.Queue(sql, args...) },
-		check: expectOneRow(m.Table, pk),
+		item:  BatchItem{SQL: sql, Args: args, Check: expectOneRow(m.Table, pk)},
 	})
 	p.post = append(p.post, func() {
 		if versioned {
@@ -318,38 +294,25 @@ func (t *tracker[E]) planInsert(p *flushPlan, e *E) error {
 	sql := t.insertSQL(p.d)
 	refs := m.Refs
 	p.seq++
-	node := &insertNode{
+	p.inserts[any(e)] = &insertNode{
 		seq:   p.seq,
 		table: m.Table,
 		deps:  deps,
-		queue: func(b *pgx.Batch) {
-			// queue-время: родители вставлены → FK-fixup по навигациям.
+		make: func() BatchItem {
+			// make-время: родители вставлены → FK-fixup по навигациям.
 			for _, ref := range refs {
 				if nav := ref.Nav(e); nav != nil {
 					ref.SetFK(e, ref.NavPK(e))
 				}
 			}
-			b.Queue(sql, m.InsertValues(e)...)
+			item := BatchItem{SQL: sql, Args: m.InsertValues(e)}
+			if m.Auto {
+				item.WantID = true
+				item.OnID = func(id int64) { m.SetPK(e, id) }
+			}
+			return item
 		},
 	}
-	if m.Auto {
-		node.scan = func(res pgx.BatchResults) error {
-			var id int64
-			if err := res.QueryRow().Scan(&id); err != nil {
-				return fmt.Errorf("sorm: insert %s: %w", m.Table, err)
-			}
-			m.SetPK(e, id)
-			return nil
-		}
-	} else {
-		node.scan = func(res pgx.BatchResults) error {
-			if _, err := res.Exec(); err != nil {
-				return fmt.Errorf("sorm: insert %s: %w", m.Table, err)
-			}
-			return nil
-		}
-	}
-	p.inserts[any(e)] = node
 
 	p.post = append(p.post, func() {
 		delete(t.added, e)
@@ -378,19 +341,15 @@ func (t *tracker[E]) insertSQL(d dialect.Dialect) string {
 		sql += d.Placeholder(i + 1)
 	}
 	sql += ")"
-	if m.Auto {
+	if m.Auto && d.ReturningSupported() {
 		sql += " RETURNING " + d.QuoteIdent(m.PK)
 	}
 	return sql
 }
 
-func expectOneRow(table string, pk any) func(pgx.BatchResults) error {
-	return func(res pgx.BatchResults) error {
-		ct, err := res.Exec()
-		if err != nil {
-			return fmt.Errorf("sorm: write %s: %w", table, err)
-		}
-		if ct.RowsAffected() == 0 {
+func expectOneRow(table string, pk any) func(int64) error {
+	return func(rowsAffected int64) error {
+		if rowsAffected == 0 {
 			return &ConflictError{Table: table, PK: pk}
 		}
 		return nil

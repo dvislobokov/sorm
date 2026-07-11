@@ -2,11 +2,8 @@ package sorm
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"reflect"
-
-	"github.com/jackc/pgx/v5"
 )
 
 // Session — Unit of Work: identity map + snapshot change tracking.
@@ -66,11 +63,7 @@ func Remove[E any](s *Session, entities ...*E) {
 // DELETE+UPDATE уходят одним pgx.Batch (один roundtrip), каждый уровень
 // вставок — ещё одним.
 func (s *Session) SaveChanges(ctx context.Context) error {
-	beginner, ok := s.db.(txBeginner)
-	if !ok {
-		return errors.New("sorm: session db cannot begin transactions; use SaveChangesTx with an explicit pgx.Tx")
-	}
-	tx, err := beginner.Begin(ctx)
+	tx, err := s.db.Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("sorm: begin: %w", err)
 	}
@@ -88,7 +81,7 @@ func (s *Session) SaveChanges(ctx context.Context) error {
 
 // SaveChangesTx применяет дифф внутри внешней транзакции; commit — за вызывающим.
 // Внимание: состояние трекера обновляется сразу после успешного flush.
-func (s *Session) SaveChangesTx(ctx context.Context, tx pgx.Tx) error {
+func (s *Session) SaveChangesTx(ctx context.Context, tx Tx) error {
 	post, err := s.flush(ctx, tx)
 	if err != nil {
 		return err

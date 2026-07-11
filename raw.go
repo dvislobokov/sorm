@@ -6,8 +6,6 @@ import (
 	"reflect"
 	"strings"
 	"sync"
-
-	"github.com/jackc/pgx/v5"
 )
 
 // Raw — escape в сырой SQL со сканированием в сущности через мету.
@@ -73,7 +71,7 @@ func (q RawQuery[T]) All(ctx context.Context) ([]*T, error) {
 	}
 	defer rows.Close()
 
-	idxs, scanErr := q.dests(columnNames(rows))
+	idxs, scanErr := q.dests(rows.Columns())
 	if scanErr != nil {
 		return nil, scanErr
 	}
@@ -103,15 +101,6 @@ func (q RawQuery[T]) One(ctx context.Context) (*T, error) {
 		return nil, ErrNotFound
 	}
 	return all[0], nil
-}
-
-func columnNames(rows pgx.Rows) []string {
-	fds := rows.FieldDescriptions()
-	out := make([]string, len(fds))
-	for i, fd := range fds {
-		out[i] = fd.Name
-	}
-	return out
 }
 
 // matchColumns — строгое соответствие: каждая колонка результата обязана
