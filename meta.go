@@ -40,6 +40,11 @@ func Register[E any](m Meta[E]) {
 	registry.Store(reflect.TypeFor[E](), &m)
 }
 
+// MetaOf возвращает зарегистрированную мету сущности — для тестов и
+// продвинутых сценариев (инструментирование, собственные executors).
+// Паникует, если мета не зарегистрирована.
+func MetaOf[E any]() *Meta[E] { return metaFor[E]() }
+
 func metaFor[E any]() *Meta[E] {
 	v, ok := registry.Load(reflect.TypeFor[E]())
 	if !ok {
