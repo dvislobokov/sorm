@@ -78,5 +78,22 @@ var postMeta = sorm.Meta[models.Post]{
 		}
 		return ch
 	},
-	SetPK: func(e *models.Post, id int64) { e.ID = id },
+	SetPK:   func(e *models.Post, id int64) { e.ID = id },
+	PKValue: func(e *models.Post) any { return e.ID },
+	Refs: []sorm.Ref[models.Post]{
+		{
+			FKCol:   "author_id",
+			NotNull: true,
+			Nav: func(e *models.Post) any {
+				if e.Author == nil {
+					return nil
+				}
+				return e.Author
+			},
+			NavPK:    func(e *models.Post) any { return e.Author.ID },
+			SetFK:    func(e *models.Post, pk any) { e.AuthorID = pk.(int64) },
+			FKIsZero: func(e *models.Post) bool { return e.AuthorID == 0 },
+		},
+	},
+	RefTables: []string{"users"},
 }

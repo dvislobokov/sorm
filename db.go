@@ -13,4 +13,11 @@ import (
 type DB interface {
 	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
 	Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error)
+	SendBatch(ctx context.Context, b *pgx.Batch) pgx.BatchResults
+}
+
+// txBeginner — то, из чего Session умеет открывать транзакцию
+// (*pgxpool.Pool, *pgx.Conn; pgx.Tx даёт вложенный savepoint).
+type txBeginner interface {
+	Begin(ctx context.Context) (pgx.Tx, error)
 }

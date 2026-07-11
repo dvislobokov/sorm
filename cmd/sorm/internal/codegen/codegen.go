@@ -169,6 +169,39 @@ func genEntity(s *parse.Schema, e parse.Entity) ([]byte, error) {
 			g.pf("\tSetPK: func(e *%s, id int64) { e.%s = %s(id) },\n", entT, pk.GoName, pk.TypeExpr)
 		}
 	}
+	g.pf("\tPKValue: func(e *%s) any { return e.%s },\n", entT, e.PK().GoName)
+	if e.VersionIndex >= 0 {
+		vf := e.Fields[e.VersionIndex].GoName
+		g.pf("\tGetVersion: func(e *%s) int64 { return e.%s },\n", entT, vf)
+		g.pf("\tSetVersion: func(e *%s, v int64) { e.%s = v },\n", entT, vf)
+	}
+
+	// Refs: belongsTo-навигации — рёбра топосорта по экземплярам и FK-fixup.
+	belongs := relationsOf(e, "belongsTo")
+	if len(belongs) > 0 {
+		g.pf("\tRefs: []sorm.Ref[%s]{\n", entT)
+		var refTables []string
+		for _, r := range belongs {
+			fk, ok := fieldByGoName(e, r.FKField)
+			if !ok {
+				return nil, fmt.Errorf("belongsTo %s: FK field %s not found", r.GoName, r.FKField)
+			}
+			target, ok := entityByName(s, r.Target)
+			if !ok {
+				return nil, fmt.Errorf("belongsTo %s: target %s not found", r.GoName, r.Target)
+			}
+			refTables = append(refTables, target.Table)
+			g.pf("\t\t{\n\t\t\tFKCol:   %q,\n\t\t\tNotNull: %v,\n", fk.Col, !fk.Nullable)
+			g.pf("\t\t\tNav: func(e *%s) any {\n\t\t\t\tif e.%s == nil {\n\t\t\t\t\treturn nil\n\t\t\t\t}\n\t\t\t\treturn e.%s\n\t\t\t},\n",
+				entT, r.GoName, r.GoName)
+			g.pf("\t\t\tNavPK: func(e *%s) any { return e.%s.%s },\n", entT, r.GoName, target.PK().GoName)
+			g.pf("\t\t\tSetFK: func(e *%s, pk any) { e.%s = pk.(%s) },\n", entT, fk.GoName, fk.TypeExpr)
+			g.pf("\t\t\tFKIsZero: func(e *%s) bool { return e.%s == %s },\n", entT, fk.GoName, zeroExpr(fk))
+			g.pf("\t\t},\n")
+		}
+		g.pf("\t},\n")
+		g.pf("\tRefTables: []string{%s},\n", quotedList(refTables))
+	}
 	g.pf("}\n")
 
 	return []byte(g.String()), nil
@@ -266,6 +299,45 @@ func relationsOf(e parse.Entity, kind string) []parse.Relation {
 		}
 	}
 	return out
+}
+
+func fieldByGoName(e parse.Entity, goName string) (parse.Field, bool) {
+	for _, f := range e.Fields {
+		if f.GoName == goName {
+			return f, true
+		}
+	}
+	return parse.Field{}, false
+}
+
+func entityByName(s *parse.Schema, name string) (parse.Entity, bool) {
+	for _, e := range s.Entities {
+		if e.Name == name {
+			return e, true
+		}
+	}
+	return parse.Entity{}, false
+}
+
+// zeroExpr — литерал нулевого значения FK-колонки для FKIsZero.
+func zeroExpr(f parse.Field) string {
+	if f.Nullable {
+		return "nil"
+	}
+	switch {
+	case f.TypeExpr == "string":
+		return `""`
+	default:
+		return "0" // числовые FK; иные типы FK вне MVP
+	}
+}
+
+func quotedList(items []string) string {
+	var parts []string
+	for _, s := range items {
+		parts = append(parts, fmt.Sprintf("%q", s))
+	}
+	return strings.Join(parts, ", ")
 }
 
 // fkColOf — имя FK-колонки на целевой («многие») стороне hasMany.

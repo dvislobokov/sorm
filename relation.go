@@ -55,7 +55,7 @@ func (r HasMany[E, C]) exists(preds []Pred[C], not bool) Pred[E] {
 // WHERE fk IN (pks) и раскладка по родителям in-memory).
 // preds фильтруют детей, не родителей.
 func (r HasMany[E, C]) Include(preds ...Pred[C]) IncludeSpec[E] {
-	return IncludeSpec[E]{load: func(ctx context.Context, db DB, parents []*E) error {
+	return IncludeSpec[E]{load: func(ctx context.Context, db DB, sess *Session, parents []*E) error {
 		if len(parents) == 0 {
 			return nil
 		}
@@ -70,10 +70,11 @@ func (r HasMany[E, C]) Include(preds ...Pred[C]) IncludeSpec[E] {
 			r.initSlice(p) // загруженная пустая связь = пустой слайс, не nil
 		}
 
-		children, err := Query[C](db).
+		cq := Query[C](db).
 			Where(Pred[C]{inNode{r.fkCol, keys, false}}).
-			Where(preds...).
-			All(ctx)
+			Where(preds...)
+		cq.sess = sess // Track трекает и детей
+		children, err := cq.All(ctx)
 		if err != nil {
 			return fmt.Errorf("include: %w", err)
 		}
@@ -89,5 +90,5 @@ func (r HasMany[E, C]) Include(preds ...Pred[C]) IncludeSpec[E] {
 // IncludeSpec — спецификация eager loading, замкнутая по родительской
 // сущности; создаётся методами дескрипторов связей, исполняется билдером.
 type IncludeSpec[E any] struct {
-	load func(ctx context.Context, db DB, parents []*E) error
+	load func(ctx context.Context, db DB, sess *Session, parents []*E) error
 }

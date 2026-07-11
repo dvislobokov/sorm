@@ -7,9 +7,11 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"os"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
@@ -129,6 +131,74 @@ func live(ctx context.Context, dsn string) error {
 		fmt.Printf("%s: articles nil=%v len=%d\n", au.Name, au.Articles == nil, len(au.Articles))
 	}
 
+	return session(ctx, pool)
+}
+
+// session — главный дифференциатор sorm: Unit of Work с change tracking.
+func session(ctx context.Context, pool *pgxpool.Pool) error {
+	fmt.Println("\n== 4. Сессия: Unit of Work ==")
+
+	// Новый граф: FK задаётся навигацией, порядок вставки и fixup — за sorm.
+	s := sorm.NewSession(pool)
+	max := &models.Author{Name: "Max", Email: "max@x.io", Active: true, Rating: 4.0, JoinedAt: time.Now()}
+	art1 := &models.Article{Author: max, Title: "Снапшот-трекинг в Go", Views: 0}
+	art2 := &models.Article{Author: max, Title: "pgx.Batch на практике", Views: 0}
+	sorm.Add(s, max)
+	sorm.Add(s, art1, art2)
+	if err := s.SaveChanges(ctx); err != nil {
+		return err
+	}
+	fmt.Printf("вставлен граф: author.id=%d, статьи fk=[%d %d] (RETURNING + fixup)\n",
+		max.ID, art1.AuthorID, art2.AuthorID)
+
+	// Track → мутация обычным Go-кодом → SaveChanges: UPDATE только
+	// изменённых колонок, version-предикат бесплатно.
+	s2 := sorm.NewSession(pool)
+	loaded, err := sorm.Track[models.Author](s2).
+		Where(gen.Author.Email.Eq("max@x.io")).
+		With(gen.Author.Articles.Include()).
+		One(ctx)
+	if err != nil {
+		return err
+	}
+	loaded.Rating = 4.9                    // изменили автора
+	loaded.Articles[0].Views = 100         // и ребёнка, загруженного Include
+	if err := s2.SaveChanges(ctx); err != nil {
+		return err
+	}
+	fmt.Printf("update: rating=%.1f (version %d), article views=%d — один roundtrip\n",
+		loaded.Rating, loaded.Version, loaded.Articles[0].Views)
+
+	// Optimistic concurrency: конкурентное изменение → типизированный конфликт.
+	sA, sB := sorm.NewSession(pool), sorm.NewSession(pool)
+	mA, _ := sorm.Track[models.Author](sA).Where(gen.Author.Email.Eq("max@x.io")).One(ctx)
+	mB, _ := sorm.Track[models.Author](sB).Where(gen.Author.Email.Eq("max@x.io")).One(ctx)
+	mA.Rating = 5.0
+	if err := sA.SaveChanges(ctx); err != nil {
+		return err
+	}
+	mB.Rating = 1.0
+	err = sB.SaveChanges(ctx)
+	var conflict *sorm.ConflictError
+	if errors.As(err, &conflict) {
+		fmt.Printf("конкурентное изменение поймано: %v\n", conflict)
+	}
+
+	// Remove: дети удаляются раньше родителя автоматически.
+	s3 := sorm.NewSession(pool)
+	gone, err := sorm.Track[models.Author](s3).
+		Where(gen.Author.Email.Eq("max@x.io")).
+		With(gen.Author.Articles.Include()).
+		One(ctx)
+	if err != nil {
+		return err
+	}
+	sorm.Remove(s3, gone.Articles...)
+	sorm.Remove(s3, gone)
+	if err := s3.SaveChanges(ctx); err != nil {
+		return err
+	}
+	fmt.Println("автор и статьи удалены одним SaveChanges (порядок — за sorm)")
 	return nil
 }
 

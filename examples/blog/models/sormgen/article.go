@@ -89,5 +89,22 @@ var articleMeta = sorm.Meta[models.Article]{
 		}
 		return ch
 	},
-	SetPK: func(e *models.Article, id int64) { e.ID = id },
+	SetPK:   func(e *models.Article, id int64) { e.ID = id },
+	PKValue: func(e *models.Article) any { return e.ID },
+	Refs: []sorm.Ref[models.Article]{
+		{
+			FKCol:   "author_id",
+			NotNull: true,
+			Nav: func(e *models.Article) any {
+				if e.Author == nil {
+					return nil
+				}
+				return e.Author
+			},
+			NavPK:    func(e *models.Article) any { return e.Author.ID },
+			SetFK:    func(e *models.Article, pk any) { e.AuthorID = pk.(int64) },
+			FKIsZero: func(e *models.Article) bool { return e.AuthorID == 0 },
+		},
+	},
+	RefTables: []string{"authors"},
 }

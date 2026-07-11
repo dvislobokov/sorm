@@ -28,6 +28,7 @@ type QueryBuilder[E any] struct {
 	preds    []Pred[E]
 	orders   []Order[E]
 	includes []IncludeSpec[E]
+	sess     *Session
 	limit    *int
 	offset   *int
 }
@@ -89,8 +90,18 @@ func (q QueryBuilder[E]) All(ctx context.Context) ([]*E, error) {
 		return nil, fmt.Errorf("sorm: select %s: %w", q.meta.Table, err)
 	}
 
+	// Identity map: до загрузки связей, чтобы дети цеплялись к каноническим
+	// указателям. Уже отслеживаемая строка → существующий объект, локальные
+	// изменения не перезатираются.
+	if q.sess != nil {
+		st := storeOf[E](q.sess)
+		for i, e := range out {
+			out[i] = st.trackScanned(e)
+		}
+	}
+
 	for _, spec := range q.includes {
-		if err := spec.load(ctx, q.db, out); err != nil {
+		if err := spec.load(ctx, q.db, q.sess, out); err != nil {
 			return nil, fmt.Errorf("sorm: select %s: %w", q.meta.Table, err)
 		}
 	}

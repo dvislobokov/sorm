@@ -111,5 +111,8 @@ var authorMeta = sorm.Meta[models.Author]{
 		}
 		return ch
 	},
-	SetPK: func(e *models.Author, id int64) { e.ID = id },
+	SetPK:      func(e *models.Author, id int64) { e.ID = id },
+	PKValue:    func(e *models.Author) any { return e.ID },
+	GetVersion: func(e *models.Author) int64 { return e.Version },
+	SetVersion: func(e *models.Author, v int64) { e.Version = v },
 }

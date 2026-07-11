@@ -31,6 +31,30 @@ type Meta[E any] struct {
 	Diff     func(any, *E) []int
 	// SetPK проставляет auto-PK после RETURNING.
 	SetPK func(*E, int64)
+	// PKValue — значение PK (ключ identity map).
+	PKValue func(*E) any
+	// GetVersion/SetVersion — только при VersionCol != "".
+	GetVersion func(*E) int64
+	SetVersion func(*E, int64)
+	// Refs — belongsTo-навигации этой сущности: рёбра для топосорта по
+	// экземплярам и FK-fixup новых графов.
+	Refs []Ref[E]
+	// RefTables — таблицы, на которые ссылаются FK (порядок удаления).
+	RefTables []string
+}
+
+// Ref — навигационная ссылка «многие → один», сгенерированная для FK-колонки.
+type Ref[E any] struct {
+	FKCol   string
+	NotNull bool
+	// Nav — указатель на родителя как any (nil-safe: typed-nil не протекает).
+	Nav func(*E) any
+	// NavPK — PK родителя; валиден только при Nav != nil.
+	NavPK func(*E) any
+	// SetFK проставляет FK из PK родителя (fixup после вставки родителя).
+	SetFK func(*E, any)
+	// FKIsZero — FK-колонка не заполнена вручную.
+	FKIsZero func(*E) bool
 }
 
 var registry sync.Map // reflect.Type -> *Meta[E] (как any)

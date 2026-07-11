@@ -149,5 +149,8 @@ var userMeta = sorm.Meta[models.User]{
 		}
 		return ch
 	},
-	SetPK: func(e *models.User, id int64) { e.ID = id },
+	SetPK:      func(e *models.User, id int64) { e.ID = id },
+	PKValue:    func(e *models.User) any { return e.ID },
+	GetVersion: func(e *models.User) int64 { return e.Version },
+	SetVersion: func(e *models.User, v int64) { e.Version = v },
 }
