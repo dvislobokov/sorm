@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -353,6 +354,50 @@ func multiDialect(ctx context.Context) error {
 	}
 	fmt.Printf("SQLite: автор %s (id=%d через LastInsertId), version=%d — тот же код, другой драйвер\n",
 		found.Name, found.ID, found.Version)
+
+	return versionedMigrations(ctx)
+}
+
+// versionedMigrations — файловые миграции из кода: Diff пишет версионный
+// *.sql (scratch-БД для replay — своя, тут in-memory SQLite), Up применяет
+// его к целевой БД и ведёт таблицу истории sorm_migrations.
+// Никаких внешних инструментов и docker-магии.
+func versionedMigrations(ctx context.Context) error {
+	fmt.Println("\n== 8. Версионные миграции из кода ==")
+
+	dir := filepath.Join(os.TempDir(), "sorm-blog-migrations")
+	_ = os.RemoveAll(dir)
+
+	scratch, err := sql.Open("sqlite", ":memory:")
+	if err != nil {
+		return err
+	}
+	defer scratch.Close()
+	scratch.SetMaxOpenConns(1)
+
+	fname, err := migrate.Diff(ctx, scratch, "sqlite", dir, "init schema")
+	if err != nil {
+		return err
+	}
+	fmt.Println("создан файл миграции:", fname)
+
+	target, err := sql.Open("sqlite", ":memory:")
+	if err != nil {
+		return err
+	}
+	defer target.Close()
+	target.SetMaxOpenConns(1)
+
+	applied, err := migrate.Up(ctx, target, "sqlite", dir)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("применено файлов: %d; повторный Up: ", len(applied))
+	again, err := migrate.Up(ctx, target, "sqlite", dir)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("%d (история в таблице %s)\n", len(again), migrate.HistoryTable)
 	return nil
 }
 

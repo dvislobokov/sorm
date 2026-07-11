@@ -2,24 +2,32 @@
 //
 //	sorm gen [каталог моделей]                       кодоген sormgen
 //	sorm schema -dialect <d> [-out file] [каталог]   каноническая DDL-схема
-//	sorm migrate diff <имя> [флаги] [каталог]        версионная миграция через Atlas
+//	sorm migrate diff <имя> [флаги] [каталог]        сгенерировать версионную миграцию
+//	sorm migrate up -dsn <dsn> [флаги]               применить версионные миграции
 //
-// Atlas НЕ является зависимостью рантайма sorm: `migrate diff` — тонкая
-// обёртка, которой нужен установленный atlas CLI (https://atlasgo.io).
-// sorm генерирует schema.sql из моделей; Atlas диффует его против каталога
-// миграций и пишет версионный SQL-файл.
+// Внешних инструментов не требуется: движок диффа (ariga.io/atlas SDK)
+// встроен. Для diff на PostgreSQL/MySQL нужна пустая scratch-БД —
+// пользователь поднимает её сам и передаёт -dev-dsn; для SQLite scratch
+// по умолчанию in-memory и ничего поднимать не нужно.
 package main
 
 import (
+	"context"
+	"database/sql"
 	"flag"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 
+	_ "github.com/go-sql-driver/mysql"
+	_ "github.com/jackc/pgx/v5/stdlib"
+	_ "modernc.org/sqlite"
+
+	"sorm"
 	"sorm/internal/codegen"
 	"sorm/internal/ddl"
 	"sorm/internal/parse"
+	"sorm/migrate"
 )
 
 func main() {
@@ -33,10 +41,17 @@ func main() {
 	case "schema":
 		err = runSchema(os.Args[2:])
 	case "migrate":
-		if len(os.Args) < 3 || os.Args[2] != "diff" {
+		if len(os.Args) < 3 {
 			usage()
 		}
-		err = runMigrateDiff(os.Args[3:])
+		switch os.Args[2] {
+		case "diff":
+			err = runMigrateDiff(os.Args[3:])
+		case "up":
+			err = runMigrateUp(os.Args[3:])
+		default:
+			usage()
+		}
 	default:
 		usage()
 	}
@@ -50,7 +65,9 @@ func usage() {
 	fmt.Fprintln(os.Stderr, `usage:
   sorm gen [models dir]
   sorm schema -dialect postgres|mysql|sqlite [-out schema.sql] [models dir]
-  sorm migrate diff <name> [-dialect postgres] [-dir migrations] [-dev-url URL] [models dir]`)
+  sorm migrate diff [-dialect postgres] [-dir migrations] [-dev-dsn DSN] <name> [models dir]
+  sorm migrate up -dsn DSN [-dialect postgres] [-dir migrations]
+(флаги — до позиционных аргументов)`)
 	os.Exit(2)
 }
 
@@ -117,19 +134,43 @@ func runSchema(args []string) error {
 	return nil
 }
 
-// devURLDefaults — dev-database, на которой Atlas нормализует и валидирует
-// диф (docker:// поднимает одноразовый контейнер сам).
-var devURLDefaults = map[string]string{
-	"postgres": "docker://postgres/17/dev",
-	"mysql":    "docker://mysql/8/dev",
-	"sqlite":   "sqlite://dev?mode=memory",
+// driverNames: диалект → имя драйвера database/sql.
+var driverNames = map[string]string{
+	"postgres": "pgx",
+	"mysql":    "mysql",
+	"sqlite":   "sqlite",
+}
+
+// registerModels загружает пакет моделей и регистрирует TableDef'ы —
+// после этого sorm/migrate видит желаемую схему без импорта sormgen.
+func registerModels(modelsDir string) error {
+	schema, err := parse.Load(modelsDir)
+	if err != nil {
+		return err
+	}
+	for _, e := range schema.Entities {
+		def, err := ddl.TableDefOf(schema, e)
+		if err != nil {
+			return err
+		}
+		sorm.RegisterTable(def)
+	}
+	return nil
+}
+
+func openDB(dialect, dsn string) (*sql.DB, error) {
+	drv, ok := driverNames[dialect]
+	if !ok {
+		return nil, fmt.Errorf("unknown dialect %q (postgres|mysql|sqlite)", dialect)
+	}
+	return sql.Open(drv, dsn)
 }
 
 func runMigrateDiff(args []string) error {
 	fs := flag.NewFlagSet("migrate diff", flag.ExitOnError)
 	dialect := fs.String("dialect", "postgres", "postgres|mysql|sqlite")
 	dir := fs.String("dir", "migrations", "каталог версионных миграций")
-	devURL := fs.String("dev-url", "", "dev-database для Atlas (default: docker://...)")
+	devDSN := fs.String("dev-dsn", "", "DSN пустой scratch-БД для replay (sqlite: по умолчанию in-memory)")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -142,49 +183,66 @@ func runMigrateDiff(args []string) error {
 		modelsDir = fs.Arg(1)
 	}
 
-	if _, err := exec.LookPath("atlas"); err != nil {
-		return fmt.Errorf("atlas CLI не найден в PATH. Установите: https://atlasgo.io/getting-started (curl -sSf https://atlasgo.sh | sh)")
+	dsn := *devDSN
+	if dsn == "" {
+		if *dialect != "sqlite" {
+			return fmt.Errorf("migrate diff: для %s нужна пустая scratch-БД — поднимите её сами и передайте -dev-dsn", *dialect)
+		}
+		dsn = ":memory:"
 	}
 
-	schema, err := parse.Load(modelsDir)
+	if err := registerModels(modelsDir); err != nil {
+		return err
+	}
+	dev, err := openDB(*dialect, dsn)
 	if err != nil {
 		return err
 	}
-	sql, err := ddl.Generate(schema, *dialect)
+	defer dev.Close()
+	if *dialect == "sqlite" {
+		dev.SetMaxOpenConns(1)
+	}
+
+	fname, err := migrate.Diff(context.Background(), dev, *dialect, *dir, name)
 	if err != nil {
 		return err
 	}
-
-	tmp, err := os.MkdirTemp("", "sorm-schema-*")
-	if err != nil {
-		return err
+	if fname == "" {
+		fmt.Println("sorm: изменений нет — миграция не создана")
+		return nil
 	}
-	defer os.RemoveAll(tmp)
-	schemaFile := filepath.Join(tmp, "schema.sql")
-	if err := os.WriteFile(schemaFile, []byte(sql), 0o644); err != nil {
-		return err
-	}
-
-	if err := os.MkdirAll(*dir, 0o755); err != nil {
-		return err
-	}
-	dev := *devURL
-	if dev == "" {
-		dev = devURLDefaults[*dialect]
-	}
-
-	cmd := exec.Command("atlas", atlasDiffArgs(name, *dir, schemaFile, dev)...)
-	cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
-	fmt.Println("sorm: exec", cmd.String())
-	return cmd.Run()
+	fmt.Printf("sorm: создана миграция %s\n", filepath.Join(*dir, fname))
+	return nil
 }
 
-// atlasDiffArgs — аргументы atlas migrate diff (выделено для тестируемости).
-func atlasDiffArgs(name, migrationsDir, schemaFile, devURL string) []string {
-	return []string{
-		"migrate", "diff", name,
-		"--dir", "file://" + filepath.ToSlash(migrationsDir),
-		"--to", "file://" + filepath.ToSlash(schemaFile),
-		"--dev-url", devURL,
+func runMigrateUp(args []string) error {
+	fs := flag.NewFlagSet("migrate up", flag.ExitOnError)
+	dialect := fs.String("dialect", "postgres", "postgres|mysql|sqlite")
+	dir := fs.String("dir", "migrations", "каталог версионных миграций")
+	dsn := fs.String("dsn", "", "DSN целевой БД (обязательно)")
+	if err := fs.Parse(args); err != nil {
+		return err
 	}
+	if *dsn == "" {
+		return fmt.Errorf("migrate up: требуется -dsn целевой БД")
+	}
+
+	db, err := openDB(*dialect, *dsn)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	applied, err := migrate.Up(context.Background(), db, *dialect, *dir)
+	if err != nil {
+		return err
+	}
+	if len(applied) == 0 {
+		fmt.Println("sorm: всё уже применено")
+		return nil
+	}
+	for _, f := range applied {
+		fmt.Println("sorm: применена", f)
+	}
+	return nil
 }

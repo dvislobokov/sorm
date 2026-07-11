@@ -45,6 +45,18 @@ func RegisterTable(def TableDef) {
 	tableDefs = append(tableDefs, def)
 }
 
+// UnregisterTable удаляет описание таблицы (в основном для тестов миграций).
+func UnregisterTable(name string) {
+	tableDefsMu.Lock()
+	defer tableDefsMu.Unlock()
+	for i, d := range tableDefs {
+		if d.Name == name {
+			tableDefs = append(tableDefs[:i], tableDefs[i+1:]...)
+			return
+		}
+	}
+}
+
 // Tables возвращает все зарегистрированные описания (детерминированный порядок).
 func Tables() []TableDef {
 	tableDefsMu.Lock()
