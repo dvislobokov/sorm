@@ -52,6 +52,10 @@ type Field struct {
 	Unique   bool
 	Version  bool
 	FK       string // "User.ID" из тега fk:, пусто если нет
+	SQLType  string // переопределение типа колонки из тега type:
+	// BasicKind — underlying-тип для маппинга в SQL: "string","int64",...,
+	// "time","bytes" (независим от именованных типов).
+	BasicKind string
 }
 
 type Relation struct {
@@ -258,6 +262,9 @@ func parseColumn(fv *types.Var, opts tagOpts, qual types.Qualifier) (*Field, err
 	if fk, ok := opts.value("fk"); ok {
 		f.FK = fk
 	}
+	if st, ok := opts.value("type"); ok {
+		f.SQLType = st
+	}
 
 	t := fv.Type()
 	if p, ok := t.(*types.Pointer); ok {
@@ -270,15 +277,16 @@ func parseColumn(fv *types.Var, opts tagOpts, qual types.Qualifier) (*Field, err
 		if f.Nullable {
 			return nil, fmt.Errorf("*[]byte is not supported; []byte is already nullable")
 		}
-		f.Kind, f.IsBytes, f.TypeExpr = KindBytes, true, "[]byte"
+		f.Kind, f.IsBytes, f.TypeExpr, f.BasicKind = KindBytes, true, "[]byte", "bytes"
 	case isTime(t):
-		f.Kind, f.IsTime, f.TypeExpr = KindOrd, true, "time.Time"
+		f.Kind, f.IsTime, f.TypeExpr, f.BasicKind = KindOrd, true, "time.Time", "time"
 	default:
 		basic, ok := t.Underlying().(*types.Basic)
 		if !ok {
 			return nil, fmt.Errorf("unsupported column type %s (sql.Null* is not supported — use a pointer)", t)
 		}
 		f.TypeExpr = types.TypeString(t, qual)
+		f.BasicKind = basic.Name()
 		info := basic.Info()
 		switch {
 		case info&types.IsBoolean != 0:
@@ -321,6 +329,25 @@ func validateRelations(s *Schema) error {
 		}
 	}
 	return nil
+}
+
+// ResolveFK: "User.ID" → ("users", "id").
+func (s *Schema) ResolveFK(fk string) (table, col string, err error) {
+	entName, fieldName, ok := strings.Cut(fk, ".")
+	if !ok {
+		return "", "", fmt.Errorf("bad fk tag %q (want Entity.Field)", fk)
+	}
+	for _, e := range s.Entities {
+		if e.Name != entName {
+			continue
+		}
+		for _, f := range e.Fields {
+			if f.GoName == fieldName {
+				return e.Table, f.Col, nil
+			}
+		}
+	}
+	return "", "", fmt.Errorf("fk tag %q: target not found", fk)
 }
 
 func hasField(e *Entity, goName string) bool {

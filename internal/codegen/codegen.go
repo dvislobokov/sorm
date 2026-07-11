@@ -8,7 +8,8 @@ import (
 	"go/format"
 	"strings"
 
-	"sorm/cmd/sorm/internal/parse"
+	"sorm/internal/ddl"
+	"sorm/internal/parse"
 )
 
 // Generate возвращает файлы сгенерированного пакета: имя файла → содержимое.
@@ -101,7 +102,37 @@ func genEntity(s *parse.Schema, e parse.Entity) ([]byte, error) {
 	g.pf("}\n\n")
 
 	// --- мета ---
-	g.pf("func init() { sorm.Register(%sMeta) }\n\n", lname)
+	g.pf("func init() {\n\tsorm.Register(%sMeta)\n\tsorm.RegisterTable(%sTableDef)\n}\n\n", lname, lname)
+
+	// --- описание таблицы для миграций (sorm/migrate, sorm schema) ---
+	tdef, err := ddl.TableDefOf(s, e)
+	if err != nil {
+		return nil, err
+	}
+	g.pf("var %sTableDef = sorm.TableDef{\n\tName: %q,\n\tColumns: []sorm.ColumnDef{\n", lname, tdef.Name)
+	for _, c := range tdef.Columns {
+		g.pf("\t\t{Name: %q, GoKind: %q", c.Name, c.GoKind)
+		if c.Nullable {
+			g.pf(", Nullable: true")
+		}
+		if c.Unique {
+			g.pf(", Unique: true")
+		}
+		if c.PK {
+			g.pf(", PK: true")
+		}
+		if c.Auto {
+			g.pf(", Auto: true")
+		}
+		if c.SQLType != "" {
+			g.pf(", SQLType: %q", c.SQLType)
+		}
+		if c.RefTable != "" {
+			g.pf(", RefTable: %q, RefCol: %q", c.RefTable, c.RefCol)
+		}
+		g.pf("},\n")
+	}
+	g.pf("\t},\n}\n\n")
 	g.pf("var %sMeta = sorm.Meta[%s]{\n", lname, entT)
 	g.pf("\tTable: %q,\n\tPK:    %q,\n", e.Table, e.PK().Col)
 	if e.PK().Auto {

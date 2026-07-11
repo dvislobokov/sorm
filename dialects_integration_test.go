@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -15,9 +16,40 @@ import (
 	"sorm/dialect/lite"
 	"sorm/dialect/my"
 	"sorm/driver/sqld"
+	"sorm/internal/ddl"
+	"sorm/internal/parse"
 	models "sorm/internal/testmodels"
 	gen "sorm/internal/testmodels/sormgen"
 )
+
+// generatedDDL — CREATE TABLE из `sorm schema`: интеграционные тесты работают
+// на той же схеме, которую увидит Atlas, — генератор DDL проверен рантаймом.
+func generatedDDL(t *testing.T, dialect string) []string {
+	t.Helper()
+	s, err := parse.Load("./internal/testmodels")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sql, err := ddl.Generate(s, dialect)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var stmts []string
+	for _, chunk := range strings.Split(sql, ";") {
+		var keep []string
+		for _, ln := range strings.Split(chunk, "\n") {
+			trimmed := strings.TrimSpace(ln)
+			if trimmed == "" || strings.HasPrefix(trimmed, "--") {
+				continue
+			}
+			keep = append(keep, ln)
+		}
+		if stmt := strings.TrimSpace(strings.Join(keep, "\n")); stmt != "" {
+			stmts = append(stmts, stmt)
+		}
+	}
+	return stmts
+}
 
 // Кросс-диалектный сквозной сценарий: одна и та же бизнес-логика sorm
 // должна работать на PostgreSQL (session_integration_test), SQLite
@@ -32,30 +64,9 @@ func sqliteDB(t *testing.T) sorm.DB {
 	sdb.SetMaxOpenConns(1) // :memory: живёт в одном соединении
 	t.Cleanup(func() { sdb.Close() })
 
-	ddl := []string{
-		`CREATE TABLE users (
-			id         INTEGER PRIMARY KEY AUTOINCREMENT,
-			email      TEXT NOT NULL UNIQUE,
-			name       TEXT NOT NULL,
-			nickname   TEXT,
-			active     BOOLEAN NOT NULL,
-			age        INTEGER NOT NULL,
-			balance    REAL NOT NULL,
-			avatar     BLOB,
-			created_at DATETIME NOT NULL,
-			deleted_at DATETIME,
-			version    INTEGER NOT NULL
-		)`,
-		`CREATE TABLE posts (
-			id        INTEGER PRIMARY KEY AUTOINCREMENT,
-			author_id INTEGER NOT NULL REFERENCES users(id),
-			title     TEXT NOT NULL,
-			body      TEXT NOT NULL
-		)`,
-	}
-	for _, s := range ddl {
+	for _, s := range generatedDDL(t, "sqlite") {
 		if _, err := sdb.Exec(s); err != nil {
-			t.Fatal(err)
+			t.Fatalf("%v\n%s", err, s)
 		}
 	}
 	return sqld.Wrap(sdb, lite.Dialect{})
@@ -73,33 +84,13 @@ func mysqlDB(t *testing.T) sorm.DB {
 	}
 	t.Cleanup(func() { sdb.Close() })
 
-	ddl := []string{
+	stmts := append([]string{
 		`DROP TABLE IF EXISTS posts`,
 		`DROP TABLE IF EXISTS users`,
-		`CREATE TABLE users (
-			id         BIGINT AUTO_INCREMENT PRIMARY KEY,
-			email      VARCHAR(255) NOT NULL UNIQUE,
-			name       VARCHAR(255) NOT NULL,
-			nickname   VARCHAR(255),
-			active     BOOLEAN NOT NULL,
-			age        INT NOT NULL,
-			balance    DOUBLE NOT NULL,
-			avatar     BLOB,
-			created_at DATETIME(6) NOT NULL,
-			deleted_at DATETIME(6),
-			version    BIGINT NOT NULL
-		)`,
-		`CREATE TABLE posts (
-			id        BIGINT AUTO_INCREMENT PRIMARY KEY,
-			author_id BIGINT NOT NULL,
-			title     VARCHAR(255) NOT NULL,
-			body      TEXT NOT NULL,
-			FOREIGN KEY (author_id) REFERENCES users(id)
-		)`,
-	}
-	for _, s := range ddl {
+	}, generatedDDL(t, "mysql")...)
+	for _, s := range stmts {
 		if _, err := sdb.Exec(s); err != nil {
-			t.Fatal(err)
+			t.Fatalf("%v\n%s", err, s)
 		}
 	}
 	return sqld.Wrap(sdb, my.Dialect{})

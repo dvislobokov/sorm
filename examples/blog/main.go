@@ -22,6 +22,7 @@ import (
 	"sorm/driver/pgxd"
 	"sorm/driver/sqld"
 	"sorm/examples/blog/models"
+	"sorm/migrate"
 	gen "sorm/examples/blog/models/sormgen"
 )
 
@@ -309,8 +310,9 @@ func projections(ctx context.Context, db sorm.DB) error {
 
 // multiDialect — тот же код sorm поверх SQLite in-memory: меняется только
 // адаптер (sqld.Wrap вместо pgxd.Wrap). MySQL — так же, с dialect/my.
+// Схему создают миграции из кода (Atlas SDK): никакого рукописного DDL.
 func multiDialect(ctx context.Context) error {
-	fmt.Println("\n== 7. Мультидиалектность: SQLite in-memory ==")
+	fmt.Println("\n== 7. Мультидиалектность + миграции из кода (SQLite in-memory) ==")
 
 	sdb, err := sql.Open("sqlite", ":memory:")
 	if err != nil {
@@ -319,21 +321,18 @@ func multiDialect(ctx context.Context) error {
 	defer sdb.Close()
 	sdb.SetMaxOpenConns(1)
 
-	for _, ddl := range []string{
-		`CREATE TABLE authors (
-			id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL,
-			email TEXT NOT NULL UNIQUE, active BOOLEAN NOT NULL, rating REAL NOT NULL,
-			joined_at DATETIME NOT NULL, version INTEGER NOT NULL
-		)`,
-		`CREATE TABLE articles (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			author_id INTEGER NOT NULL REFERENCES authors(id),
-			title TEXT NOT NULL, views INTEGER NOT NULL, published_at DATETIME
-		)`,
-	} {
-		if _, err := sdb.Exec(ddl); err != nil {
-			return err
-		}
+	// Желаемая схема — из моделей (sormgen регистрирует TableDef);
+	// Atlas инспектирует БД и применяет дифф.
+	plan, err := migrate.Plan(ctx, sdb, "sqlite")
+	if err != nil {
+		return err
+	}
+	fmt.Printf("migrate.Plan: %d statement(s), например: %s\n", len(plan), plan[0])
+	if err := migrate.Apply(ctx, sdb, "sqlite"); err != nil {
+		return err
+	}
+	if again, _ := migrate.Plan(ctx, sdb, "sqlite"); len(again) == 0 {
+		fmt.Println("migrate.Apply применён; повторный Plan пуст — схема в синхроне")
 	}
 
 	db := sqld.Wrap(sdb, lite.Dialect{}) // единственное отличие от PG-пути

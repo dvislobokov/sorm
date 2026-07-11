@@ -45,7 +45,23 @@ type authorSnap struct {
 	fJoinedAt time.Time
 }
 
-func init() { sorm.Register(authorMeta) }
+func init() {
+	sorm.Register(authorMeta)
+	sorm.RegisterTable(authorTableDef)
+}
+
+var authorTableDef = sorm.TableDef{
+	Name: "authors",
+	Columns: []sorm.ColumnDef{
+		{Name: "id", GoKind: "int64", PK: true, Auto: true},
+		{Name: "name", GoKind: "string"},
+		{Name: "email", GoKind: "string", Unique: true},
+		{Name: "active", GoKind: "bool"},
+		{Name: "rating", GoKind: "float64"},
+		{Name: "joined_at", GoKind: "time"},
+		{Name: "version", GoKind: "int64"},
+	},
+}
 
 var authorMeta = sorm.Meta[models.Author]{
 	Table:      "authors",

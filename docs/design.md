@@ -353,10 +353,21 @@ MVP: только `dialect/pg` поверх pgx v5 (`pgx.Batch`, `CollectRows`).
 ## 9. CLI
 
 ```
-sorm gen ./models            # найти структуры с тегом sorm → сгенерировать ./models/sormgen
+sorm gen ./models                          # кодоген ./models/sormgen
+sorm schema -dialect postgres ./models     # каноническая DDL-схема (stdout/-out)
+sorm migrate diff <name> ./models          # версионная миграция (обёртка atlas CLI)
 ```
 
 Через `//go:generate sorm gen .`. Генератор детерминирован (стабильный порядок), diff-friendly вывод, ошибки валидации схемы — до записи файлов.
+
+## 9a. Миграции (реализовано)
+
+Два пути, оба на движке Atlas:
+
+1. **Из кода** — пакет `sorm/migrate` (Atlas как Go-зависимость `ariga.io/atlas`, внешний CLI не нужен): `migrate.Apply(ctx, sdb, "postgres")` инспектирует БД, диффует против зарегистрированных моделей (`sorm gen` эмитит `TableDef` в sormgen) и применяет изменения; `migrate.Plan` — dry-run SQL. Дифф ограничен таблицами sorm — чужие таблицы не трогаются. Рантайм sorm от Atlas не зависит — зависимость линкуется только при импорте `sorm/migrate`.
+2. **Версионные файлы** (CI/ревью/прод) — `sorm schema` генерирует канонический DDL, `sorm migrate diff` — тонкая обёртка над установленным atlas CLI (`atlas migrate diff --to file://schema.sql --dev-url docker://...`).
+
+Интеграционные тесты создают таблицы сгенерированной схемой — DDL-генератор проверен рантаймом на всех трёх диалектах.
 
 ## 10. Решения по типам (бывшие открытые вопросы)
 

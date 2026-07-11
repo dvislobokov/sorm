@@ -5,15 +5,15 @@ import (
 	"path/filepath"
 	"testing"
 
-	"sorm/cmd/sorm/internal/codegen"
-	"sorm/cmd/sorm/internal/parse"
+	"sorm/internal/codegen"
+	"sorm/internal/parse"
 )
 
 // Golden-тест: генерация из internal/testmodels должна бит-в-бит совпадать
 // с закоммиченным internal/testmodels/sormgen. При осознанном изменении
 // генератора: `go run ./cmd/sorm gen ./internal/testmodels` и закоммитить.
 func TestGoldenTestmodels(t *testing.T) {
-	modelsDir := filepath.Join("..", "..", "..", "..", "internal", "testmodels")
+	modelsDir := filepath.Join("..", "testmodels")
 
 	schema, err := parse.Load(modelsDir)
 	if err != nil {
@@ -55,7 +55,7 @@ func TestGoldenTestmodels(t *testing.T) {
 }
 
 func TestSchemaShape(t *testing.T) {
-	modelsDir := filepath.Join("..", "..", "..", "..", "internal", "testmodels")
+	modelsDir := filepath.Join("..", "testmodels")
 	schema, err := parse.Load(modelsDir)
 	if err != nil {
 		t.Fatal(err)

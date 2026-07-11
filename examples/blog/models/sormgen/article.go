@@ -32,7 +32,21 @@ type articleSnap struct {
 	fPublishedAt *time.Time
 }
 
-func init() { sorm.Register(articleMeta) }
+func init() {
+	sorm.Register(articleMeta)
+	sorm.RegisterTable(articleTableDef)
+}
+
+var articleTableDef = sorm.TableDef{
+	Name: "articles",
+	Columns: []sorm.ColumnDef{
+		{Name: "id", GoKind: "int64", PK: true, Auto: true},
+		{Name: "author_id", GoKind: "int64", RefTable: "authors", RefCol: "id"},
+		{Name: "title", GoKind: "string"},
+		{Name: "views", GoKind: "int"},
+		{Name: "published_at", GoKind: "time", Nullable: true},
+	},
+}
 
 var articleMeta = sorm.Meta[models.Article]{
 	Table:      "articles",

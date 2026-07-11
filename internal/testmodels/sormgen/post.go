@@ -27,7 +27,20 @@ type postSnap struct {
 	fBody     string
 }
 
-func init() { sorm.Register(postMeta) }
+func init() {
+	sorm.Register(postMeta)
+	sorm.RegisterTable(postTableDef)
+}
+
+var postTableDef = sorm.TableDef{
+	Name: "posts",
+	Columns: []sorm.ColumnDef{
+		{Name: "id", GoKind: "int64", PK: true, Auto: true},
+		{Name: "author_id", GoKind: "int64", RefTable: "users", RefCol: "id"},
+		{Name: "title", GoKind: "string"},
+		{Name: "body", GoKind: "string"},
+	},
+}
 
 var postMeta = sorm.Meta[models.Post]{
 	Table:      "posts",

@@ -59,7 +59,27 @@ type userSnap struct {
 	fDeletedAt *time.Time
 }
 
-func init() { sorm.Register(userMeta) }
+func init() {
+	sorm.Register(userMeta)
+	sorm.RegisterTable(userTableDef)
+}
+
+var userTableDef = sorm.TableDef{
+	Name: "users",
+	Columns: []sorm.ColumnDef{
+		{Name: "id", GoKind: "int64", PK: true, Auto: true},
+		{Name: "email", GoKind: "string", Unique: true},
+		{Name: "name", GoKind: "string"},
+		{Name: "nickname", GoKind: "string", Nullable: true},
+		{Name: "active", GoKind: "bool"},
+		{Name: "age", GoKind: "int"},
+		{Name: "balance", GoKind: "float64"},
+		{Name: "avatar", GoKind: "bytes", Nullable: true},
+		{Name: "created_at", GoKind: "time"},
+		{Name: "deleted_at", GoKind: "time", Nullable: true},
+		{Name: "version", GoKind: "int64"},
+	},
+}
 
 var userMeta = sorm.Meta[models.User]{
 	Table:      "users",

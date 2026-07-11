@@ -31,31 +31,13 @@ func testPool(t *testing.T) sorm.DB {
 	pool := pgxd.Wrap(pgPool)
 
 	ctx := context.Background()
-	for _, s := range []string{
+	stmts := append([]string{
 		`DROP TABLE IF EXISTS posts`,
 		`DROP TABLE IF EXISTS users`,
-		`CREATE TABLE users (
-			id         BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-			email      TEXT NOT NULL UNIQUE,
-			name       TEXT NOT NULL,
-			nickname   TEXT,
-			active     BOOLEAN NOT NULL,
-			age        INT NOT NULL,
-			balance    DOUBLE PRECISION NOT NULL,
-			avatar     BYTEA,
-			created_at TIMESTAMPTZ NOT NULL,
-			deleted_at TIMESTAMPTZ,
-			version    BIGINT NOT NULL
-		)`,
-		`CREATE TABLE posts (
-			id        BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-			author_id BIGINT NOT NULL REFERENCES users(id),
-			title     TEXT NOT NULL,
-			body      TEXT NOT NULL
-		)`,
-	} {
+	}, generatedDDL(t, "postgres")...)
+	for _, s := range stmts {
 		if _, err := pool.Exec(ctx, s); err != nil {
-			t.Fatal(err)
+			t.Fatalf("%v\n%s", err, s)
 		}
 	}
 	return pool
