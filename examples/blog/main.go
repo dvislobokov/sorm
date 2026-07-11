@@ -199,6 +199,52 @@ func session(ctx context.Context, pool *pgxpool.Pool) error {
 		return err
 	}
 	fmt.Println("автор и статьи удалены одним SaveChanges (порядок — за sorm)")
+
+	return setBasedAndRaw(ctx, pool)
+}
+
+// setBasedAndRaw — операции без сессии: массовые UPDATE/DELETE и raw-escape.
+func setBasedAndRaw(ctx context.Context, pool *pgxpool.Pool) error {
+	fmt.Println("\n== 5. Set-based операции и raw SQL ==")
+
+	// Массовый UPDATE: типизированные присваивания, автоинкремент version.
+	// Update без Where не скомпилируется в ошибку молча — вернёт guard-ошибку,
+	// полная таблица только через явный AllRows().
+	n, err := sorm.Update[models.Article](pool).
+		Set(gen.Article.Views.Set(0)).
+		Where(gen.Article.PublishedAt.IsNull()).
+		Exec(ctx)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("обнулены просмотры у %d черновиков\n", n)
+
+	// Raw в сущности: несоответствие колонок — ScanError, не полупустой объект.
+	top, err := sorm.Raw[models.Article](pool,
+		`SELECT * FROM articles WHERE views >= $1 ORDER BY views DESC`, 1000).All(ctx)
+	if err != nil {
+		return err
+	}
+	for _, art := range top {
+		fmt.Printf("raw: %-24s views=%d\n", art.Title, art.Views)
+	}
+
+	// RawAs в произвольную структуру: агрегаты, которые не форма сущности.
+	type authorStat struct {
+		Name     string
+		Articles int64 `sorm:"n"`
+		MaxViews int64 `sorm:"max_views"`
+	}
+	stats, err := sorm.RawAs[authorStat](pool, `
+		SELECT a.name, count(*) AS n, max(ar.views) AS max_views
+		FROM authors a JOIN articles ar ON ar.author_id = a.id
+		GROUP BY a.name ORDER BY max_views DESC`).All(ctx)
+	if err != nil {
+		return err
+	}
+	for _, st := range stats {
+		fmt.Printf("stat: %-8s статей=%d max=%d\n", st.Name, st.Articles, st.MaxViews)
+	}
 	return nil
 }
 
