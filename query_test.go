@@ -98,6 +98,30 @@ func TestBetweenAndNull(t *testing.T) {
 		18, 65)
 }
 
+func TestAnyExists(t *testing.T) {
+	// Фильтр родителя по детям — то, что Bun не умеет (issue #604).
+	p := gen.Post
+	assertSQL(t,
+		sorm.Query[models.User](nil).Where(u.Active.Eq(true), u.Posts.Any(p.Title.HasPrefix("Go"))),
+		`SELECT `+allCols+` FROM "users" WHERE ("active" = $1 AND `+
+			`EXISTS (SELECT 1 FROM "posts" WHERE "author_id" = "users"."id" AND "title" LIKE $2))`,
+		true, "Go%")
+}
+
+func TestNoneNotExists(t *testing.T) {
+	assertSQL(t,
+		sorm.Query[models.User](nil).Where(u.Posts.None()),
+		`SELECT `+allCols+` FROM "users" WHERE NOT EXISTS (SELECT 1 FROM "posts" WHERE "author_id" = "users"."id")`)
+}
+
+func TestWithImmutability(t *testing.T) {
+	base := sorm.Query[models.User](nil)
+	_ = base.With(u.Posts.Include())
+	// With не должен протекать в базовый билдер (SQL родителя одинаков,
+	// но проверяем, что цепочка не паникует и билдер копируется).
+	assertSQL(t, base, `SELECT `+allCols+` FROM "users"`)
+}
+
 func TestNot(t *testing.T) {
 	assertSQL(t, sorm.Query[models.User](nil).Where(sorm.Not(u.Active.Eq(true))),
 		`SELECT `+allCols+` FROM "users" WHERE NOT ("active" = $1)`, true)

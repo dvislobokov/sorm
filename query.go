@@ -22,13 +22,14 @@ func Query[E any](db DB) QueryBuilder[E] {
 }
 
 type QueryBuilder[E any] struct {
-	db     DB
-	meta   *Meta[E]
-	d      dialect.Dialect
-	preds  []Pred[E]
-	orders []Order[E]
-	limit  *int
-	offset *int
+	db       DB
+	meta     *Meta[E]
+	d        dialect.Dialect
+	preds    []Pred[E]
+	orders   []Order[E]
+	includes []IncludeSpec[E]
+	limit    *int
+	offset   *int
 }
 
 // Where добавляет условия; несколько Where и несколько аргументов — AND.
@@ -39,6 +40,13 @@ func (q QueryBuilder[E]) Where(ps ...Pred[E]) QueryBuilder[E] {
 
 func (q QueryBuilder[E]) OrderBy(os ...Order[E]) QueryBuilder[E] {
 	q.orders = append(slices.Clip(q.orders), os...)
+	return q
+}
+
+// With добавляет eager loading связей (спецификации создаются методом
+// Include на дескрипторах связей: gen.User.Posts.Include(...)).
+func (q QueryBuilder[E]) With(specs ...IncludeSpec[E]) QueryBuilder[E] {
+	q.includes = append(slices.Clip(q.includes), specs...)
 	return q
 }
 
@@ -64,18 +72,27 @@ func (q QueryBuilder[E]) All(ctx context.Context) ([]*E, error) {
 	if err != nil {
 		return nil, fmt.Errorf("sorm: select %s: %w", q.meta.Table, err)
 	}
-	defer rows.Close()
 
 	out := []*E{}
 	for rows.Next() {
 		e := new(E)
 		if err := rows.Scan(q.meta.Scan(e)...); err != nil {
+			rows.Close()
 			return nil, fmt.Errorf("sorm: scan %s: %w", q.meta.Table, err)
 		}
 		out = append(out, e)
 	}
+	// Закрываем ДО загрузки связей: на однососединительном DB (pgx.Tx)
+	// нельзя открыть второй запрос поверх активного.
+	rows.Close()
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("sorm: select %s: %w", q.meta.Table, err)
+	}
+
+	for _, spec := range q.includes {
+		if err := spec.load(ctx, q.db, out); err != nil {
+			return nil, fmt.Errorf("sorm: select %s: %w", q.meta.Table, err)
+		}
 	}
 	return out, nil
 }

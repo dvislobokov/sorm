@@ -25,6 +25,7 @@ var User = struct {
 	CreatedAt sorm.OrdCol[models.User, time.Time]
 	DeletedAt sorm.OrdCol[models.User, time.Time]
 	Version   sorm.OrdCol[models.User, int64]
+	Posts     sorm.HasMany[models.User, models.Post]
 }{
 	ID:        sorm.NewOrdCol[models.User, int64]("id"),
 	Email:     sorm.NewStrCol[models.User]("email"),
@@ -37,6 +38,13 @@ var User = struct {
 	CreatedAt: sorm.NewOrdCol[models.User, time.Time]("created_at"),
 	DeletedAt: sorm.NewOrdCol[models.User, time.Time]("deleted_at"),
 	Version:   sorm.NewOrdCol[models.User, int64]("version"),
+	Posts: sorm.NewHasMany[models.User, models.Post](
+		"author_id",
+		func(e *models.User) any { return e.ID },
+		func(c *models.Post) any { return c.AuthorID },
+		func(e *models.User) { e.Posts = []*models.Post{} },
+		func(e *models.User, c *models.Post) { e.Posts = append(e.Posts, c) },
+	),
 }
 
 type userSnap struct {

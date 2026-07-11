@@ -61,6 +61,11 @@ func demoToSQL() {
 	fresh := base.Where(ar.PublishedAt.IsNotNull())
 	printSQL(base.ToSQL())
 	printSQL(fresh.ToSQL())
+
+	// Фильтр родителя по детям: EXISTS вместо JOIN-дубликатов.
+	printSQL(sorm.Query[models.Author](nil).
+		Where(a.Articles.Any(ar.Views.Gte(1000))).
+		ToSQL())
 }
 
 func live(ctx context.Context, dsn string) error {
@@ -95,6 +100,34 @@ func live(ctx context.Context, dsn string) error {
 
 	_, err = sorm.Query[models.Author](pool).Where(a.Name.Eq("нет такого")).One(ctx)
 	fmt.Println("One по несуществующему:", err) // sorm: not found — единая семантика
+
+	fmt.Println("\n== 3. Eager loading (Include, split-стратегия) ==")
+
+	// Авторы, у которых есть статья с 1000+ просмотров, вместе с
+	// опубликованными статьями каждого.
+	authors, err := sorm.Query[models.Author](pool).
+		Where(a.Articles.Any(ar.Views.Gte(1000))).
+		With(a.Articles.Include(ar.PublishedAt.IsNotNull())).
+		OrderBy(a.Name.Asc()).
+		All(ctx)
+	if err != nil {
+		return err
+	}
+	for _, au := range authors {
+		fmt.Printf("%s (%d опубл. статей):\n", au.Name, len(au.Articles))
+		for _, art := range au.Articles {
+			fmt.Printf("  - %-24s views=%d\n", art.Title, art.Views)
+		}
+	}
+
+	// Загруженная пустая связь — пустой слайс, НЕ nil («забыл Include» отличим от «нет данных»).
+	all, err := sorm.Query[models.Author](pool).With(a.Articles.Include()).All(ctx)
+	if err != nil {
+		return err
+	}
+	for _, au := range all {
+		fmt.Printf("%s: articles nil=%v len=%d\n", au.Name, au.Articles == nil, len(au.Articles))
+	}
 
 	return nil
 }

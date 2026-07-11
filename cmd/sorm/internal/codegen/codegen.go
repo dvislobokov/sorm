@@ -61,14 +61,32 @@ func genEntity(s *parse.Schema, e parse.Entity) ([]byte, error) {
 
 	entT := "models." + e.Name
 
-	// --- дескрипторы колонок ---
+	// --- дескрипторы колонок и связей ---
 	g.pf("// %s — типизированные дескрипторы колонок %s.\nvar %s = struct {\n", e.Name, entT, e.Name)
 	for _, f := range e.Fields {
 		g.pf("\t%s %s\n", f.GoName, descType(entT, f))
 	}
+	hasManys := relationsOf(e, "hasMany")
+	for _, r := range hasManys {
+		g.pf("\t%s sorm.HasMany[%s, models.%s]\n", r.GoName, entT, r.Target)
+	}
 	g.pf("}{\n")
 	for _, f := range e.Fields {
 		g.pf("\t%s: %s(%q),\n", f.GoName, descCtor(entT, f), f.Col)
+	}
+	for _, r := range hasManys {
+		fkCol, err := fkColOf(s, r)
+		if err != nil {
+			return nil, err
+		}
+		childT := "models." + r.Target
+		g.pf("\t%s: sorm.NewHasMany[%s, %s](\n", r.GoName, entT, childT)
+		g.pf("\t\t%q,\n", fkCol)
+		g.pf("\t\tfunc(e *%s) any { return e.%s },\n", entT, e.PK().GoName)
+		g.pf("\t\tfunc(c *%s) any { return c.%s },\n", childT, r.FKField)
+		g.pf("\t\tfunc(e *%s) { e.%s = []*%s{} },\n", entT, r.GoName, childT)
+		g.pf("\t\tfunc(e *%s, c *%s) { e.%s = append(e.%s, c) },\n", entT, childT, r.GoName, r.GoName)
+		g.pf("\t),\n")
 	}
 	g.pf("}\n\n")
 
@@ -239,3 +257,28 @@ func colList(fields []parse.Field, include func(parse.Field) bool) string {
 }
 
 func lowerFirst(s string) string { return strings.ToLower(s[:1]) + s[1:] }
+
+func relationsOf(e parse.Entity, kind string) []parse.Relation {
+	var out []parse.Relation
+	for _, r := range e.Relations {
+		if r.Kind == kind {
+			out = append(out, r)
+		}
+	}
+	return out
+}
+
+// fkColOf — имя FK-колонки на целевой («многие») стороне hasMany.
+func fkColOf(s *parse.Schema, r parse.Relation) (string, error) {
+	for _, e := range s.Entities {
+		if e.Name != r.Target {
+			continue
+		}
+		for _, f := range e.Fields {
+			if f.GoName == r.FKField {
+				return f.Col, nil
+			}
+		}
+	}
+	return "", fmt.Errorf("relation %s: FK field %s not found on %s", r.GoName, r.FKField, r.Target)
+}

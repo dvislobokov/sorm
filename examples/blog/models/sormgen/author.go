@@ -19,6 +19,7 @@ var Author = struct {
 	Rating   sorm.OrdCol[models.Author, float64]
 	JoinedAt sorm.OrdCol[models.Author, time.Time]
 	Version  sorm.OrdCol[models.Author, int64]
+	Articles sorm.HasMany[models.Author, models.Article]
 }{
 	ID:       sorm.NewOrdCol[models.Author, int64]("id"),
 	Name:     sorm.NewStrCol[models.Author]("name"),
@@ -27,6 +28,13 @@ var Author = struct {
 	Rating:   sorm.NewOrdCol[models.Author, float64]("rating"),
 	JoinedAt: sorm.NewOrdCol[models.Author, time.Time]("joined_at"),
 	Version:  sorm.NewOrdCol[models.Author, int64]("version"),
+	Articles: sorm.NewHasMany[models.Author, models.Article](
+		"author_id",
+		func(e *models.Author) any { return e.ID },
+		func(c *models.Article) any { return c.AuthorID },
+		func(e *models.Author) { e.Articles = []*models.Article{} },
+		func(e *models.Author, c *models.Article) { e.Articles = append(e.Articles, c) },
+	),
 }
 
 type authorSnap struct {

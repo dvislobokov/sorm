@@ -127,6 +127,37 @@ func (n logicalNode) writeSQL(w *sqlWriter) {
 	w.raw(")")
 }
 
+// existsNode — коррелированный подзапрос по связи: внутри него неквалифицированные
+// имена колонок разрешаются в дочернюю таблицу (внутренняя область видимости),
+// ссылка на родителя квалифицируется явно.
+type existsNode struct {
+	childTable  string
+	fkCol       string
+	parentTable string
+	parentPK    string
+	preds       []node
+	not         bool
+}
+
+func (n existsNode) writeSQL(w *sqlWriter) {
+	if n.not {
+		w.raw("NOT ")
+	}
+	w.raw("EXISTS (SELECT 1 FROM ")
+	w.ident(n.childTable)
+	w.raw(" WHERE ")
+	w.ident(n.fkCol)
+	w.raw(" = ")
+	w.ident(n.parentTable)
+	w.raw(".")
+	w.ident(n.parentPK)
+	for _, p := range n.preds {
+		w.raw(" AND ")
+		p.writeSQL(w)
+	}
+	w.raw(")")
+}
+
 type notNode struct{ child node }
 
 func (n notNode) writeSQL(w *sqlWriter) {
