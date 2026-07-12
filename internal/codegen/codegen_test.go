@@ -19,8 +19,8 @@ func TestGoldenTestmodels(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(schema.Entities) != 2 {
-		t.Fatalf("entities = %d, want 2", len(schema.Entities))
+	if len(schema.Entities) != 3 {
+		t.Fatalf("entities = %d, want 3", len(schema.Entities))
 	}
 
 	files, err := codegen.Generate(schema)

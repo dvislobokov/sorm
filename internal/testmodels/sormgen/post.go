@@ -14,11 +14,17 @@ var Post = struct {
 	AuthorID sorm.OrdCol[models.Post, int64]
 	Title    sorm.StrCol[models.Post]
 	Body     sorm.StrCol[models.Post]
+	Author   sorm.BelongsTo[models.Post, models.User]
 }{
 	ID:       sorm.NewOrdCol[models.Post, int64]("posts", "id"),
 	AuthorID: sorm.NewOrdCol[models.Post, int64]("posts", "author_id"),
 	Title:    sorm.NewStrCol[models.Post]("posts", "title"),
 	Body:     sorm.NewStrCol[models.Post]("posts", "body"),
+	Author: sorm.NewBelongsTo[models.Post, models.User](
+		"author_id",
+		func(c *models.Post) any { return c.AuthorID },
+		func(c *models.Post, p *models.User) { c.Author = p },
+	),
 }
 
 type postSnap struct {

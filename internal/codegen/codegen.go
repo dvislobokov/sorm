@@ -71,6 +71,10 @@ func genEntity(s *parse.Schema, e parse.Entity) ([]byte, error) {
 	for _, r := range hasManys {
 		g.pf("\t%s sorm.HasMany[%s, models.%s]\n", r.GoName, entT, r.Target)
 	}
+	belongTos := relationsOf(e, "belongsTo")
+	for _, r := range belongTos {
+		g.pf("\t%s sorm.BelongsTo[%s, models.%s]\n", r.GoName, entT, r.Target)
+	}
 	g.pf("}{\n")
 	for _, f := range e.Fields {
 		g.pf("\t%s: %s(%q, %q),\n", f.GoName, descCtor(entT, f), e.Table, f.Col)
@@ -87,6 +91,18 @@ func genEntity(s *parse.Schema, e parse.Entity) ([]byte, error) {
 		g.pf("\t\tfunc(c *%s) any { return c.%s },\n", childT, r.FKField)
 		g.pf("\t\tfunc(e *%s) { e.%s = []*%s{} },\n", entT, r.GoName, childT)
 		g.pf("\t\tfunc(e *%s, c *%s) { e.%s = append(e.%s, c) },\n", entT, childT, r.GoName, r.GoName)
+		g.pf("\t),\n")
+	}
+	for _, r := range belongTos {
+		fk, ok := fieldByGoName(e, r.FKField)
+		if !ok {
+			return nil, fmt.Errorf("belongsTo %s: FK field %s not found", r.GoName, r.FKField)
+		}
+		parentT := "models." + r.Target
+		g.pf("\t%s: sorm.NewBelongsTo[%s, %s](\n", r.GoName, entT, parentT)
+		g.pf("\t\t%q,\n", fk.Col)
+		g.pf("\t\tfunc(c *%s) any { return c.%s },\n", entT, fk.GoName)
+		g.pf("\t\tfunc(c *%s, p *%s) { c.%s = p },\n", entT, parentT, r.GoName)
 		g.pf("\t),\n")
 	}
 	g.pf("}\n\n")

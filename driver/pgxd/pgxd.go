@@ -32,7 +32,7 @@ func (d db) Dialect() dialect.Dialect { return pg.Dialect{} }
 func (d db) Query(ctx context.Context, sql string, args ...any) (sorm.Rows, error) {
 	rows, err := d.p.Query(ctx, sql, args...)
 	if err != nil {
-		return nil, err
+		return nil, translate(err)
 	}
 	return pgxRows{rows}, nil
 }
@@ -40,9 +40,36 @@ func (d db) Query(ctx context.Context, sql string, args ...any) (sorm.Rows, erro
 func (d db) Exec(ctx context.Context, sql string, args ...any) (int64, error) {
 	ct, err := d.p.Exec(ctx, sql, args...)
 	if err != nil {
-		return 0, err
+		return 0, translate(err)
 	}
 	return ct.RowsAffected(), nil
+}
+
+// translate конвертирует ошибки констрейнтов PostgreSQL (класс 23xxx)
+// в типизированный *sorm.ConstraintError.
+func translate(err error) error {
+	var pgErr *pgconn.PgError
+	if err == nil || !errors.As(err, &pgErr) {
+		return err
+	}
+	var kind sorm.ConstraintKind
+	switch pgErr.Code {
+	case "23505":
+		kind = sorm.ConstraintUnique
+	case "23503":
+		kind = sorm.ConstraintForeignKey
+	case "23502":
+		kind = sorm.ConstraintNotNull
+	case "23514":
+		kind = sorm.ConstraintCheck
+	default:
+		return err
+	}
+	name := pgErr.ConstraintName
+	if name == "" {
+		name = pgErr.ColumnName
+	}
+	return &sorm.ConstraintError{Kind: kind, Constraint: name, Err: err}
 }
 
 func (d db) ExecBatch(ctx context.Context, items []sorm.BatchItem) error {
@@ -56,7 +83,7 @@ func (d db) ExecBatch(ctx context.Context, items []sorm.BatchItem) error {
 			var id int64
 			if err := br.QueryRow().Scan(&id); err != nil {
 				br.Close()
-				return err
+				return translate(err)
 			}
 			it.OnID(id)
 			continue
@@ -64,7 +91,7 @@ func (d db) ExecBatch(ctx context.Context, items []sorm.BatchItem) error {
 		ct, err := br.Exec()
 		if err != nil {
 			br.Close()
-			return err
+			return translate(err)
 		}
 		if it.Check != nil {
 			if err := it.Check(ct.RowsAffected()); err != nil {
@@ -88,6 +115,16 @@ func (d db) Begin(ctx context.Context) (sorm.Tx, error) {
 		return nil, fmt.Errorf("pgxd: begin: %w", err)
 	}
 	return tx{db{pgtx}, pgtx}, nil
+}
+
+// RetryableError — transient-ошибки PostgreSQL, после которых транзакцию
+// имеет смысл повторить: serialization_failure (40001) и deadlock_detected (40P01).
+func (d db) RetryableError(err error) bool {
+	var pgErr *pgconn.PgError
+	if !errors.As(err, &pgErr) {
+		return false
+	}
+	return pgErr.Code == "40001" || pgErr.Code == "40P01"
 }
 
 type tx struct {

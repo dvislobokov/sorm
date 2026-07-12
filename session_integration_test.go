@@ -32,6 +32,7 @@ func testPool(t *testing.T) sorm.DB {
 
 	ctx := context.Background()
 	stmts := append([]string{
+		`DROP TABLE IF EXISTS api_keys`,
 		`DROP TABLE IF EXISTS posts`,
 		`DROP TABLE IF EXISTS users`,
 	}, generatedDDL(t, "postgres")...)

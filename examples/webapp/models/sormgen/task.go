@@ -19,6 +19,7 @@ var Task = struct {
 	Priority  sorm.OrdCol[models.Task, int]
 	CreatedAt sorm.OrdCol[models.Task, time.Time]
 	Version   sorm.OrdCol[models.Task, int64]
+	User      sorm.BelongsTo[models.Task, models.User]
 }{
 	ID:        sorm.NewOrdCol[models.Task, int64]("tasks", "id"),
 	UserID:    sorm.NewOrdCol[models.Task, int64]("tasks", "user_id"),
@@ -27,6 +28,11 @@ var Task = struct {
 	Priority:  sorm.NewOrdCol[models.Task, int]("tasks", "priority"),
 	CreatedAt: sorm.NewOrdCol[models.Task, time.Time]("tasks", "created_at"),
 	Version:   sorm.NewOrdCol[models.Task, int64]("tasks", "version"),
+	User: sorm.NewBelongsTo[models.Task, models.User](
+		"user_id",
+		func(c *models.Task) any { return c.UserID },
+		func(c *models.Task, p *models.User) { c.User = p },
+	),
 }
 
 type taskSnap struct {

@@ -63,6 +63,11 @@ func Remove[E any](s *Session, entities ...*E) {
 // DELETE+UPDATE уходят одним pgx.Batch (один roundtrip), каждый уровень
 // вставок — ещё одним.
 func (s *Session) SaveChanges(ctx context.Context) error {
+	// Сессия поверх уже открытой транзакции (RunInTx): flush в ней,
+	// commit — за владельцем транзакции.
+	if tx, ok := s.db.(Tx); ok {
+		return s.SaveChangesTx(ctx, tx)
+	}
 	tx, err := s.db.Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("sorm: begin: %w", err)

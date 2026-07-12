@@ -22,6 +22,15 @@ type User struct {
 	Posts     []*Post `sorm:"hasMany:AuthorID"`
 }
 
+// ApiKey — сущность со строковым (UUID) PK, назначаемым клиентом:
+// путь без auto/RETURNING.
+type ApiKey struct {
+	ID     string `sorm:"pk,type:varchar(36)"`
+	UserID int64  `sorm:"fk:User.ID"`
+	User   *User  `sorm:"belongsTo:UserID"`
+	Label  string
+}
+
 type Post struct {
 	ID       int64  `sorm:"pk,auto"`
 	AuthorID int64  `sorm:"fk:User.ID"`

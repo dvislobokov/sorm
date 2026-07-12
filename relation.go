@@ -92,3 +92,77 @@ func (r HasMany[E, C]) Include(preds ...Pred[C]) IncludeSpec[E] {
 type IncludeSpec[E any] struct {
 	load func(ctx context.Context, db DB, sess *Session, parents []*E) error
 }
+
+// BelongsTo — дескриптор связи «многие к одному» (ребёнок → родитель).
+// Функции доступа генерируются `sorm gen`.
+type BelongsTo[C, P any] struct {
+	fkCol     string
+	childFK   func(*C) any
+	setParent func(*C, *P)
+}
+
+func NewBelongsTo[C, P any](
+	fkCol string,
+	childFK func(*C) any,
+	setParent func(*C, *P),
+) BelongsTo[C, P] {
+	return BelongsTo[C, P]{fkCol, childFK, setParent}
+}
+
+// Is — фильтр РЕБЁНКА по атрибутам родителя:
+// EXISTS (SELECT 1 FROM parents WHERE parents.pk = children.fk AND preds).
+func (r BelongsTo[C, P]) Is(preds ...Pred[P]) Pred[C] {
+	cm, pm := metaFor[C](), metaFor[P]()
+	return pred[C](existsNode{
+		childTable:  pm.Table,
+		fkCol:       pm.PK,
+		parentTable: cm.Table,
+		parentPK:    r.fkCol,
+		preds:       nodesOf(preds),
+	})
+}
+
+// Include — eager loading родителя: один запрос WHERE pk IN (fk детей)
+// и раскладка по детям. preds фильтруют родителей; у ребёнка, чей родитель
+// отфильтрован, навигация остаётся nil.
+func (r BelongsTo[C, P]) Include(preds ...Pred[P]) IncludeSpec[C] {
+	return IncludeSpec[C]{load: func(ctx context.Context, db DB, sess *Session, children []*C) error {
+		if len(children) == 0 {
+			return nil
+		}
+		pm := metaFor[P]()
+
+		keys := make([]any, 0, len(children))
+		seen := map[any]bool{}
+		for _, c := range children {
+			k := r.childFK(c)
+			if isZero(k) || seen[k] {
+				continue
+			}
+			seen[k] = true
+			keys = append(keys, k)
+		}
+		if len(keys) == 0 {
+			return nil
+		}
+
+		pq := Query[P](db).
+			Where(pred[P](inNode{colRef{name: pm.PK}, keys, false})).
+			Where(preds...)
+		pq.sess = sess // Track трекает и родителей
+		parents, err := pq.All(ctx)
+		if err != nil {
+			return fmt.Errorf("include: %w", err)
+		}
+		byPK := make(map[any]*P, len(parents))
+		for _, p := range parents {
+			byPK[pm.PKValue(p)] = p
+		}
+		for _, c := range children {
+			if p, ok := byPK[r.childFK(c)]; ok {
+				r.setParent(c, p)
+			}
+		}
+		return nil
+	}}
+}
