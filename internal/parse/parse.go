@@ -321,6 +321,11 @@ func parseColumn(fv *types.Var, opts tagOpts, qual types.Qualifier) (*Field, err
 		f.Kind, f.IsBytes, f.TypeExpr, f.BasicKind = KindBytes, true, "[]byte", "bytes"
 	case isTime(t):
 		f.Kind, f.IsTime, f.TypeExpr, f.BasicKind = KindOrd, true, "time.Time", "time"
+	case isUUID(t):
+		// uuid.UUID is a comparable [16]byte: equality predicates, plain
+		// snapshot comparison and map keys all work by value. Generation is
+		// client-side (uuid.New() before Add); `auto` is not applicable.
+		f.Kind, f.TypeExpr, f.BasicKind = KindEq, "uuid.UUID", "uuid"
 	default:
 		basic, ok := t.Underlying().(*types.Basic)
 		if !ok {
@@ -474,6 +479,12 @@ func isTime(t types.Type) bool {
 	named, ok := t.(*types.Named)
 	return ok && named.Obj().Pkg() != nil &&
 		named.Obj().Pkg().Path() == "time" && named.Obj().Name() == "Time"
+}
+
+func isUUID(t types.Type) bool {
+	named, ok := t.(*types.Named)
+	return ok && named.Obj().Pkg() != nil &&
+		named.Obj().Pkg().Path() == "github.com/google/uuid" && named.Obj().Name() == "UUID"
 }
 
 func isIntExpr(expr string) bool {

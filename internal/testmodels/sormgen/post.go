@@ -15,6 +15,7 @@ var Post = struct {
 	Title    sorm.StrCol[models.Post]
 	Body     sorm.StrCol[models.Post]
 	Views    sorm.OrdCol[models.Post, int]
+	Comments sorm.HasMany[models.Post, models.Comment]
 	Author   sorm.BelongsTo[models.Post, models.User]
 }{
 	ID:       sorm.NewOrdCol[models.Post, int64]("posts", "id"),
@@ -22,6 +23,18 @@ var Post = struct {
 	Title:    sorm.NewStrCol[models.Post]("posts", "title"),
 	Body:     sorm.NewStrCol[models.Post]("posts", "body"),
 	Views:    sorm.NewOrdCol[models.Post, int]("posts", "views"),
+	Comments: sorm.NewHasMany[models.Post, models.Comment](
+		"post_id",
+		func(e *models.Post) any { return e.ID },
+		func(c *models.Comment) any {
+			if c.PostID == nil {
+				return nil
+			}
+			return *c.PostID
+		},
+		func(e *models.Post) { e.Comments = []*models.Comment{} },
+		func(e *models.Post, c *models.Comment) { e.Comments = append(e.Comments, c) },
+	),
 	Author: sorm.NewBelongsTo[models.Post, models.User](
 		"author_id",
 		func(c *models.Post) any { return c.AuthorID },

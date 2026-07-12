@@ -8,6 +8,8 @@ package testmodels
 import (
 	"time"
 
+	"github.com/google/uuid"
+
 	"github.com/dvislobokov/sorm"
 )
 
@@ -62,10 +64,31 @@ type ApiKey struct {
 }
 
 type Post struct {
-	ID       int64  `sorm:"pk,auto"`
-	AuthorID int64  `sorm:"fk:User.ID,index:idx_posts_author_title"`
-	Author   *User  `sorm:"belongsTo:AuthorID"`
-	Title    string `sorm:"index:idx_posts_author_title"` // composite (author_id, title)
+	ID       int64      `sorm:"pk,auto"`
+	AuthorID int64      `sorm:"fk:User.ID,index:idx_posts_author_title"`
+	Author   *User      `sorm:"belongsTo:AuthorID"`
+	Title    string     `sorm:"index:idx_posts_author_title"` // composite (author_id, title)
 	Body     string
-	Views    int    `sorm:"index"` // single-column idx_posts_views
+	Views    int        `sorm:"index"` // single-column idx_posts_views
+	Comments []*Comment `sorm:"hasMany:PostID"`
+}
+
+// Device exercises native uuid.UUID support: a client-assigned UUID PK
+// (uuid.New() before Add) and a nullable UUID column.
+type Device struct {
+	ID      uuid.UUID  `sorm:"pk"`
+	OwnerID int64      `sorm:"fk:User.ID"`
+	Owner   *User      `sorm:"belongsTo:OwnerID"`
+	Token   *uuid.UUID
+	Name    string
+}
+
+// Comment is the nullable-FK side: PostID may be NULL (a detached comment).
+// Exercises pointer-FK navigation: value-keyed relation maps and
+// address-of FK fixup on insert.
+type Comment struct {
+	ID     int64  `sorm:"pk,auto"`
+	PostID *int64 `sorm:"fk:Post.ID"`
+	Post   *Post  `sorm:"belongsTo:PostID"`
+	Body   string
 }

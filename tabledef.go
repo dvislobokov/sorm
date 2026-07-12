@@ -127,6 +127,8 @@ func SQLTypeFor(dialect string, c ColumnDef) string {
 
 func pgTypeOf(c ColumnDef) string {
 	switch c.GoKind {
+	case "uuid":
+		return "UUID"
 	case "bytes":
 		return "BYTEA"
 	case "time":
@@ -152,6 +154,8 @@ func pgTypeOf(c ColumnDef) string {
 
 func myTypeOf(c ColumnDef) string {
 	switch c.GoKind {
+	case "uuid":
+		return "CHAR(36)" // uuid.UUID round-trips as its canonical text form
 	case "bytes":
 		return "BLOB"
 	case "time":
@@ -179,6 +183,8 @@ func myTypeOf(c ColumnDef) string {
 
 func liteTypeOf(c ColumnDef) string {
 	switch c.GoKind {
+	case "uuid":
+		return "TEXT"
 	case "bytes":
 		return "BLOB"
 	case "time":

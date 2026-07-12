@@ -25,10 +25,10 @@ type QueryBuilder[E any] // immutable: every method returns a copy
 ### Column descriptors (generated)
 
 ```go
-type Col[E, V]     // Eq, Neq, In, NotIn, IsNull, IsNotNull, Set, Asc, Desc, ColName
+type Col[E, V]     // Eq, Neq, In, NotIn, IsNull, IsNotNull, Set, SetNull, Asc, Desc, ColName
 type OrdCol[E, V]  // + Gt, Gte, Lt, Lte, Between
 type StrCol[E]     // + Like, ILike, HasPrefix, HasSuffix, Contains
-type BytesCol[E]   // Eq, Neq, IsNull, IsNotNull, Set
+type BytesCol[E]   // Eq, Neq, IsNull, IsNotNull, Set, SetNull
 
 type Pred[E]   // a condition; a value
 type Order[E]  // a sort key

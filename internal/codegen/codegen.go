@@ -75,13 +75,16 @@ func genEntity(s *parse.Schema, e parse.Entity) ([]byte, error) {
 	g := &gen{}
 	lname := lowerFirst(e.Name)
 
-	needsTime, needsBytes, needsSlices := false, false, false
+	needsTime, needsBytes, needsSlices, needsUUID := false, false, false, false
 	for _, f := range e.Fields {
 		if f.IsTime {
 			needsTime = true
 		}
 		if f.IsBytes {
 			needsBytes, needsSlices = true, true
+		}
+		if f.BasicKind == "uuid" {
+			needsUUID = true
 		}
 	}
 
@@ -95,7 +98,11 @@ func genEntity(s *parse.Schema, e parse.Entity) ([]byte, error) {
 	if needsTime {
 		g.pf("\t\"time\"\n")
 	}
-	g.pf("\n\t\"github.com/dvislobokov/sorm\"\n\n\tmodels %q\n)\n\n", s.PkgPath)
+	g.pf("\n\t\"github.com/dvislobokov/sorm\"\n")
+	if needsUUID {
+		g.pf("\t\"github.com/google/uuid\"\n")
+	}
+	g.pf("\n\tmodels %q\n)\n\n", s.PkgPath)
 
 	entT := "models." + e.Name
 
@@ -125,15 +132,15 @@ func genEntity(s *parse.Schema, e parse.Entity) ([]byte, error) {
 		g.pf("\t%s: %s(%q, %q),\n", f.GoName, descCtor(entT, f), e.Table, f.Col)
 	}
 	for _, r := range hasManys {
-		fkCol, err := fkColOf(s, r)
+		fk, err := fkFieldOf(s, r)
 		if err != nil {
 			return nil, err
 		}
 		childT := "models." + r.Target
 		g.pf("\t%s: sorm.NewHasMany[%s, %s](\n", r.GoName, entT, childT)
-		g.pf("\t\t%q,\n", fkCol)
+		g.pf("\t\t%q,\n", fk.Col)
 		g.pf("\t\tfunc(e *%s) any { return e.%s },\n", entT, e.PK().GoName)
-		g.pf("\t\tfunc(c *%s) any { return c.%s },\n", childT, r.FKField)
+		g.pf("\t\t%s,\n", fkValueFn(childT, fk))
 		g.pf("\t\tfunc(e *%s) { e.%s = []*%s{} },\n", entT, r.GoName, childT)
 		g.pf("\t\tfunc(e *%s, c *%s) { e.%s = append(e.%s, c) },\n", entT, childT, r.GoName, r.GoName)
 		g.pf("\t),\n")
@@ -146,7 +153,7 @@ func genEntity(s *parse.Schema, e parse.Entity) ([]byte, error) {
 		parentT := "models." + r.Target
 		g.pf("\t%s: sorm.NewBelongsTo[%s, %s](\n", r.GoName, entT, parentT)
 		g.pf("\t\t%q,\n", fk.Col)
-		g.pf("\t\tfunc(c *%s) any { return c.%s },\n", entT, fk.GoName)
+		g.pf("\t\t%s,\n", fkValueFn(entT, fk))
 		g.pf("\t\tfunc(c *%s, p *%s) { c.%s = p },\n", entT, parentT, r.GoName)
 		g.pf("\t),\n")
 	}
@@ -159,15 +166,15 @@ func genEntity(s *parse.Schema, e parse.Entity) ([]byte, error) {
 		g.pf("\t),\n")
 	}
 	for _, r := range hasOnes {
-		fkCol, err := fkColOf(s, r)
+		fk, err := fkFieldOf(s, r)
 		if err != nil {
 			return nil, err
 		}
 		childT := "models." + r.Target
 		g.pf("\t%s: sorm.NewHasOne[%s, %s](\n", r.GoName, entT, childT)
-		g.pf("\t\t%q,\n", fkCol)
+		g.pf("\t\t%q,\n", fk.Col)
 		g.pf("\t\tfunc(e *%s) any { return e.%s },\n", entT, e.PK().GoName)
-		g.pf("\t\tfunc(c *%s) any { return c.%s },\n", childT, r.FKField)
+		g.pf("\t\t%s,\n", fkValueFn(childT, fk))
 		g.pf("\t\tfunc(e *%s, c *%s) { e.%s = c },\n", entT, childT, r.GoName)
 		g.pf("\t),\n")
 	}
@@ -326,7 +333,12 @@ func genEntity(s *parse.Schema, e parse.Entity) ([]byte, error) {
 			g.pf("\t\t\tNav: func(e *%s) any {\n\t\t\t\tif e.%s == nil {\n\t\t\t\t\treturn nil\n\t\t\t\t}\n\t\t\t\treturn e.%s\n\t\t\t},\n",
 				entT, r.GoName, r.GoName)
 			g.pf("\t\t\tNavPK: func(e *%s) any { return e.%s.%s },\n", entT, r.GoName, target.PK().GoName)
-			g.pf("\t\t\tSetFK: func(e *%s, pk any) { e.%s = pk.(%s) },\n", entT, fk.GoName, fk.TypeExpr)
+			if fk.Nullable {
+				// pointer FK: store the address of a copy of the parent's PK
+				g.pf("\t\t\tSetFK: func(e *%s, pk any) { v := pk.(%s); e.%s = &v },\n", entT, fk.TypeExpr, fk.GoName)
+			} else {
+				g.pf("\t\t\tSetFK: func(e *%s, pk any) { e.%s = pk.(%s) },\n", entT, fk.GoName, fk.TypeExpr)
+			}
 			g.pf("\t\t\tFKIsZero: func(e *%s) bool { return e.%s == %s },\n", entT, fk.GoName, zeroExpr(fk))
 			g.pf("\t\t},\n")
 		}
@@ -458,6 +470,8 @@ func zeroExpr(f parse.Field) string {
 	switch {
 	case f.TypeExpr == "string":
 		return `""`
+	case f.BasicKind == "uuid":
+		return "(uuid.UUID{})"
 	default:
 		return "0" // numeric FKs; other FK types are out of MVP scope
 	}
@@ -473,15 +487,36 @@ func quotedList(items []string) string {
 
 // fkColOf — FK column name on the target ("many") side of hasMany.
 func fkColOf(s *parse.Schema, r parse.Relation) (string, error) {
+	f, err := fkFieldOf(s, r)
+	if err != nil {
+		return "", err
+	}
+	return f.Col, nil
+}
+
+// fkFieldOf — the FK field on the target ("many") side of hasMany/hasOne.
+func fkFieldOf(s *parse.Schema, r parse.Relation) (parse.Field, error) {
 	for _, e := range s.Entities {
 		if e.Name != r.Target {
 			continue
 		}
 		for _, f := range e.Fields {
 			if f.GoName == r.FKField {
-				return f.Col, nil
+				return f, nil
 			}
 		}
 	}
-	return "", fmt.Errorf("relation %s: FK field %s not found on %s", r.GoName, r.FKField, r.Target)
+	return parse.Field{}, fmt.Errorf("relation %s: FK field %s not found on %s", r.GoName, r.FKField, r.Target)
+}
+
+// fkValueFn renders a `func(x *T) any` accessor for an FK column.
+// Nullable (pointer) FKs are dereferenced so relation maps key by value,
+// not by pointer address; nil stays nil.
+func fkValueFn(recvT string, fk parse.Field) string {
+	if !fk.Nullable {
+		return fmt.Sprintf("func(c *%s) any { return c.%s }", recvT, fk.GoName)
+	}
+	return fmt.Sprintf(
+		"func(c *%s) any {\n\t\tif c.%s == nil {\n\t\t\treturn nil\n\t\t}\n\t\treturn *c.%s\n\t}",
+		recvT, fk.GoName, fk.GoName)
 }

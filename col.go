@@ -38,6 +38,10 @@ func (c Col[E, V]) IsNotNull() Pred[E] { return pred[E](nullNode{c.ref, true}) }
 // Set is a typed assignment for set-based Update.
 func (c Col[E, V]) Set(v V) Assign[E] { return Assign[E]{col: c.ref.name, val: v} }
 
+// SetNull assigns SQL NULL (for nullable columns; a NOT NULL column will
+// come back as a typed ConstraintError from the database).
+func (c Col[E, V]) SetNull() Assign[E] { return Assign[E]{col: c.ref.name, val: nil} }
+
 func (c Col[E, V]) Asc() Order[E]  { return Order[E]{ref: c.ref} }
 func (c Col[E, V]) Desc() Order[E] { return Order[E]{ref: c.ref, desc: true} }
 
@@ -128,6 +132,9 @@ func (c BytesCol[E]) IsNull() Pred[E]      { return pred[E](nullNode{c.ref, fals
 func (c BytesCol[E]) IsNotNull() Pred[E]   { return pred[E](nullNode{c.ref, true}) }
 
 func (c BytesCol[E]) Set(v []byte) Assign[E] { return Assign[E]{col: c.ref.name, val: v} }
+
+// SetNull assigns SQL NULL.
+func (c BytesCol[E]) SetNull() Assign[E] { return Assign[E]{col: c.ref.name, val: nil} }
 
 // Order is a sort element, closed over the entity.
 type Order[E any] struct {

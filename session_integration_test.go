@@ -32,6 +32,8 @@ func testPool(t *testing.T) sorm.DB {
 
 	ctx := context.Background()
 	stmts := append([]string{
+		`DROP TABLE IF EXISTS comments`,
+		`DROP TABLE IF EXISTS devices`,
 		`DROP TABLE IF EXISTS profiles`,
 		`DROP TABLE IF EXISTS user_tags`,
 		`DROP TABLE IF EXISTS tags`,

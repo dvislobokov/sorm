@@ -52,13 +52,22 @@ Options are comma-separated inside one `sorm:"..."` tag.
 | `float64` | DOUBLE PRECISION | DOUBLE | REAL |
 | `time.Time` | TIMESTAMPTZ | DATETIME(6) | DATETIME |
 | `[]byte` | BYTEA (nullable) | BLOB (nullable) | BLOB (nullable) |
+| `uuid.UUID`² | UUID | CHAR(36) | TEXT |
 
 ¹ MySQL cannot index unsized TEXT; use `type:text` when you need more than
 255 characters and don't index the column.
 
-**Nullability** is expressed with pointers: `*string`, `*time.Time`, …
-The generated column descriptor still uses the base type, so predicates
-never juggle pointers — `u.Nickname.Eq("gopher")` plus `u.Nickname.IsNull()`.
+² `github.com/google/uuid` is supported natively: UUIDs are compared and
+mapped **by value** (no strings), work as primary keys (client-assigned —
+call `uuid.New()` before `Add`; `auto` does not apply), as foreign keys and
+as nullable `*uuid.UUID` columns.
+
+**Nullability** is expressed with pointers: `*string`, `*time.Time`,
+`*int64`, `*uuid.UUID`, … The generated column descriptor still uses the
+base type, so predicates never juggle pointers — `u.Nickname.Eq("gopher")`
+plus `u.Nickname.IsNull()`; `SetNull()` writes NULL in set-based updates.
+Nullable foreign keys work in relations too: a child with a NULL FK simply
+keeps a nil navigation after `Include`.
 
 Named types with a basic underlying type (`type Status string`) are
 supported and keep their own type in predicates.

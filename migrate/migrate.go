@@ -240,6 +240,13 @@ func buildColumn(c sorm.ColumnDef, dialect string) (*schema.Column, error) {
 	case "bool":
 		col = newCol(c.Nullable, func() *schema.Column { return schema.NewBoolColumn(c.Name, typ) },
 			func() *schema.Column { return schema.NewNullBoolColumn(c.Name, typ) })
+	case "uuid":
+		if dialect == "postgres" {
+			// PostgreSQL has a real uuid type; Atlas models it separately.
+			col = schema.NewColumn(c.Name).SetType(&schema.UUIDType{T: typ}).SetNull(c.Nullable)
+			break
+		}
+		fallthrough // MySQL char(36) / SQLite text behave like strings
 	case "string":
 		// "varchar(36)" → type "varchar" + size separately: Atlas parsers
 		// do not accept the size inside the type name.
