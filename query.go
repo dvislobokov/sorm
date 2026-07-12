@@ -40,6 +40,23 @@ type QueryBuilder[E any] struct {
 	name     string
 	limit    *int
 	offset   *int
+	lock     string // "" | "FOR UPDATE" | "FOR UPDATE SKIP LOCKED"
+}
+
+// ForUpdate locks the selected rows until the transaction ends
+// (SELECT ... FOR UPDATE). Meaningful inside RunInTx / an open Tx;
+// PostgreSQL and MySQL only — building on SQLite is an error.
+func (q QueryBuilder[E]) ForUpdate() QueryBuilder[E] {
+	q.lock = "FOR UPDATE"
+	return q
+}
+
+// ForUpdateSkipLocked locks the selected rows, silently skipping rows
+// already locked by other transactions — the standard queue-worker
+// pattern (PostgreSQL / MySQL 8+).
+func (q QueryBuilder[E]) ForUpdateSkipLocked() QueryBuilder[E] {
+	q.lock = "FOR UPDATE SKIP LOCKED"
+	return q
 }
 
 // Named labels the query for instrumentation: spans and metrics carry it
@@ -195,6 +212,7 @@ func (q QueryBuilder[E]) Count(ctx context.Context) (int64, error) {
 	base.orders = nil
 	base.limit = nil
 	base.offset = nil
+	base.lock = ""
 	sqlStr, args, err := base.buildSelect("count(*)")
 	if err != nil {
 		return 0, err
@@ -216,6 +234,15 @@ func (q QueryBuilder[E]) Count(ctx context.Context) (int64, error) {
 
 func (q QueryBuilder[E]) buildSelect(selectList string) (string, []any, error) {
 	w := newSchemaSQLWriter(q.d, q.schema)
+	q.writeSelect(w, selectList)
+	return w.sb.String(), w.args, w.err
+}
+
+// writeSelect renders the query into an existing writer — used by
+// buildSelect and by subquery embedding (shared placeholder numbering).
+// Everything dialect-sensitive goes through w, so a builder created with
+// a nil db renders correctly inside any outer query.
+func (q QueryBuilder[E]) writeSelect(w *sqlWriter, selectList string) {
 	w.raw("SELECT " + selectList + " FROM ")
 	w.table(q.meta.Table)
 
@@ -241,7 +268,13 @@ func (q QueryBuilder[E]) buildSelect(selectList string) (string, []any, error) {
 	if q.offset != nil {
 		w.raw(" OFFSET " + strconv.Itoa(*q.offset))
 	}
-	return w.sb.String(), w.args, w.err
+	if q.lock != "" {
+		if w.d.Name() == "sqlite" {
+			w.fail("sorm: FOR UPDATE is not supported on sqlite (the database locks whole files)")
+			return
+		}
+		w.raw(" " + q.lock)
+	}
 }
 
 func selectColumns(d dialect.Dialect, cols []string) string {

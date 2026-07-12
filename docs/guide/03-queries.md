@@ -114,6 +114,48 @@ Safety rails:
 - On versioned entities, set-based updates automatically bump the
   `version` column, so open sessions still detect the conflict.
 
+## Subqueries
+
+`SubQ[V]` is a typed subquery: an int64 subquery cannot meet a string
+column, and the outer query and subquery share one placeholder sequence.
+Build the inner query with a nil db — rendering follows the outer
+connection's dialect:
+
+```go
+// id IN (SELECT author_id FROM posts WHERE views >= 500)
+flagged := sorm.Pick(p.AuthorID, sorm.Query[models.Post](nil).Where(p.Views.Gte(500)))
+users, err := sorm.Query[models.User](db).Where(sorm.InQuery(u.ID, flagged)).All(ctx)
+
+// age > (SELECT min(age) FROM users) — scalar subquery
+youngest := sorm.PickScalar(sorm.Min[models.User](u.Age), sorm.Query[models.User](nil))
+older, err := sorm.Query[models.User](db).Where(sorm.GtQ(u.Age, youngest)).All(ctx)
+```
+
+- `Pick(col, query)` — the IN shape; `InQuery`/`NotInQuery` consume it.
+  Beware SQL semantics: `NOT IN` over a set containing NULL matches nothing.
+- `PickScalar(agg, query)` — the scalar shape; comparisons are
+  `EqQ/NeqQ/GtQ/GteQ/LtQ/LteQ`. More than one row is a database error.
+- Correlated subqueries (referencing the outer row) are what relation
+  predicates are for: `u.Posts.Any(...)`, `None`, `Author.Is(...)`.
+
+## Row locking
+
+```go
+// Inside RunInTx: lock the row until commit (SELECT ... FOR UPDATE).
+u, err := sorm.Track[models.User](s).Where(u.ID.Eq(id)).ForUpdate().One(ctx)
+
+// Queue-worker pattern: grab unlocked work, skip rows other workers hold.
+jobs, err := sorm.Query[models.Job](tx).
+    Where(j.State.Eq("pending")).
+    Limit(10).
+    ForUpdateSkipLocked().
+    All(ctx)
+```
+
+PostgreSQL and MySQL (8+ for SKIP LOCKED); on SQLite both are a build
+error — the engine locks whole files, row locks do not exist. Locks are
+meaningful only inside an open transaction.
+
 ## Upsert
 
 `INSERT ... ON CONFLICT` (PostgreSQL/SQLite) / `ON DUPLICATE KEY` (MySQL),

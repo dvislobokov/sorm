@@ -19,7 +19,17 @@ type QueryBuilder[E any] // immutable: every method returns a copy
     func (q) One(ctx) (*E, error)                      // ErrNotFound when none
     func (q) Count(ctx) (int64, error)
     func (q) Iter(ctx) iter.Seq2[*E, error]            // streaming; no With
+    func (q) ForUpdate() QueryBuilder[E]               // SELECT ... FOR UPDATE (PG/MySQL)
+    func (q) ForUpdateSkipLocked() QueryBuilder[E]     // + SKIP LOCKED (queue pattern)
     func (q) ToSQL() (string, []any)
+
+// typed subqueries (inner builder usually built with a nil db)
+type SubQ[V comparable]
+func Pick[E, V](c ColOfV[E, V], q QueryBuilder[E]) SubQ[V]      // IN shape
+func PickScalar[E, V](a AggExpr[E, V], q QueryBuilder[E]) SubQ[V] // scalar shape
+func InQuery[E, V](c ColOfV[E, V], sub SubQ[V]) Pred[E]
+func NotInQuery[E, V](c ColOfV[E, V], sub SubQ[V]) Pred[E]
+func EqQ/NeqQ/GtQ/GteQ/LtQ/LteQ[E, V](c ColOfV[E, V], sub SubQ[V]) Pred[E]
 ```
 
 ### Column descriptors (generated)
