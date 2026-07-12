@@ -3,9 +3,9 @@
 package sormgen
 
 import (
-	"sorm"
+	"github.com/dvislobokov/sorm"
 
-	models "sorm/internal/testmodels"
+	models "github.com/dvislobokov/sorm/internal/testmodels"
 )
 
 // ApiKey — типизированные дескрипторы колонок models.ApiKey.

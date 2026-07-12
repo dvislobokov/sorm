@@ -3,12 +3,12 @@
 // []byte, версию и навигации.
 package testmodels
 
-//go:generate go run sorm/cmd/sorm gen .
+//go:generate go run github.com/dvislobokov/sorm/cmd/sorm gen .
 
 import (
 	"time"
 
-	"sorm"
+	"github.com/dvislobokov/sorm"
 )
 
 type User struct {

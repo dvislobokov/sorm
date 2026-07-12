@@ -2,7 +2,7 @@
 
 package sormgen
 
-import "sorm"
+import "github.com/dvislobokov/sorm"
 
 func init() {
 	sorm.RegisterTable(sorm.TableDef{

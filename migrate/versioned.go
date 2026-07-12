@@ -30,7 +30,7 @@ const HistoryTable = "sorm_migrations"
 // применены». Возвращает имя созданного файла или "" если изменений нет.
 func Diff(ctx context.Context, dev *sql.DB, dialect, dir, name string) (string, error) {
 	if _, err := Up(ctx, dev, dialect, dir); err != nil {
-		return "", fmt.Errorf("sorm/migrate: replay on dev db: %w", err)
+		return "", fmt.Errorf("github.com/dvislobokov/sorm/migrate: replay on dev db: %w", err)
 	}
 	drv, changes, err := diff(ctx, dev, dialect)
 	if err != nil {
@@ -41,7 +41,7 @@ func Diff(ctx context.Context, dev *sql.DB, dialect, dir, name string) (string, 
 	}
 	plan, err := drv.PlanChanges(ctx, name, changes)
 	if err != nil {
-		return "", fmt.Errorf("sorm/migrate: plan: %w", err)
+		return "", fmt.Errorf("github.com/dvislobokov/sorm/migrate: plan: %w", err)
 	}
 
 	var up strings.Builder
@@ -130,10 +130,10 @@ func down(ctx context.Context, db *sql.DB, dialect, dir string, steps int) ([]st
 		downFile := strings.TrimSuffix(v, ".sql") + ".down.sql"
 		content, err := os.ReadFile(filepath.Join(dir, downFile))
 		if err != nil {
-			return reverted, fmt.Errorf("sorm/migrate: нет down-файла для %s: %w", v, err)
+			return reverted, fmt.Errorf("github.com/dvislobokov/sorm/migrate: нет down-файла для %s: %w", v, err)
 		}
 		if err := revertFile(ctx, db, dialect, v, string(content)); err != nil {
-			return reverted, fmt.Errorf("sorm/migrate: %s: %w", downFile, err)
+			return reverted, fmt.Errorf("github.com/dvislobokov/sorm/migrate: %s: %w", downFile, err)
 		}
 		reverted = append(reverted, v)
 	}
@@ -214,7 +214,7 @@ func up(ctx context.Context, db *sql.DB, dialect, dir string) ([]string, error) 
 			return done, err
 		}
 		if err := applyFile(ctx, db, dialect, f, string(content)); err != nil {
-			return done, fmt.Errorf("sorm/migrate: %s: %w", f, err)
+			return done, fmt.Errorf("github.com/dvislobokov/sorm/migrate: %s: %w", f, err)
 		}
 		done = append(done, f)
 	}
@@ -293,7 +293,7 @@ func ensureHistory(ctx context.Context, db *sql.DB, dialect string) error {
 	}
 	_, err := db.ExecContext(ctx, ddl)
 	if err != nil {
-		return fmt.Errorf("sorm/migrate: history table: %w", err)
+		return fmt.Errorf("github.com/dvislobokov/sorm/migrate: history table: %w", err)
 	}
 	return nil
 }

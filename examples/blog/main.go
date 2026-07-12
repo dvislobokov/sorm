@@ -18,13 +18,13 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	_ "modernc.org/sqlite"
 
-	"sorm"
-	"sorm/dialect/lite"
-	"sorm/driver/pgxd"
-	"sorm/driver/sqld"
-	"sorm/examples/blog/models"
-	"sorm/migrate"
-	gen "sorm/examples/blog/models/sormgen"
+	"github.com/dvislobokov/sorm"
+	"github.com/dvislobokov/sorm/dialect/lite"
+	"github.com/dvislobokov/sorm/driver/pgxd"
+	"github.com/dvislobokov/sorm/driver/sqld"
+	"github.com/dvislobokov/sorm/examples/blog/models"
+	"github.com/dvislobokov/sorm/migrate"
+	gen "github.com/dvislobokov/sorm/examples/blog/models/sormgen"
 )
 
 var (

@@ -1,4 +1,4 @@
-module sorm
+module github.com/dvislobokov/sorm
 
 go 1.25.0
 

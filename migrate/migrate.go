@@ -25,7 +25,7 @@ import (
 	"ariga.io/atlas/sql/schema"
 	"ariga.io/atlas/sql/sqlite"
 
-	"sorm"
+	"github.com/dvislobokov/sorm"
 )
 
 // Apply приводит схему БД к состоянию зарегистрированных моделей.
@@ -41,7 +41,7 @@ func Apply(ctx context.Context, db *sql.DB, dialect string) error {
 			return nil
 		}
 		if err := drv.ApplyChanges(ctx, changes); err != nil {
-			return fmt.Errorf("sorm/migrate: apply: %w", err)
+			return fmt.Errorf("github.com/dvislobokov/sorm/migrate: apply: %w", err)
 		}
 		return nil
 	})
@@ -58,7 +58,7 @@ func Plan(ctx context.Context, db *sql.DB, dialect string) ([]string, error) {
 	}
 	plan, err := drv.PlanChanges(ctx, "sorm-diff", changes)
 	if err != nil {
-		return nil, fmt.Errorf("sorm/migrate: plan: %w", err)
+		return nil, fmt.Errorf("github.com/dvislobokov/sorm/migrate: plan: %w", err)
 	}
 	out := make([]string, len(plan.Changes))
 	for i, c := range plan.Changes {
@@ -75,7 +75,7 @@ func diff(ctx context.Context, db *sql.DB, dialect string) (atlasmigrate.Driver,
 
 	defs := sorm.Tables()
 	if len(defs) == 0 {
-		return nil, nil, fmt.Errorf("sorm/migrate: no tables registered — import your generated sormgen package")
+		return nil, nil, fmt.Errorf("github.com/dvislobokov/sorm/migrate: no tables registered — import your generated sormgen package")
 	}
 	names := make([]string, len(defs))
 	for i, d := range defs {
@@ -85,7 +85,7 @@ func diff(ctx context.Context, db *sql.DB, dialect string) (atlasmigrate.Driver,
 	// Инспектируем только таблицы sorm: дифф не предложит DROP чужого.
 	current, err := drv.InspectSchema(ctx, "", &schema.InspectOptions{Tables: names})
 	if err != nil {
-		return nil, nil, fmt.Errorf("sorm/migrate: inspect: %w", err)
+		return nil, nil, fmt.Errorf("github.com/dvislobokov/sorm/migrate: inspect: %w", err)
 	}
 
 	desired, err := buildSchema(current.Name, defs, dialect)
@@ -95,7 +95,7 @@ func diff(ctx context.Context, db *sql.DB, dialect string) (atlasmigrate.Driver,
 
 	changes, err := drv.SchemaDiff(current, desired)
 	if err != nil {
-		return nil, nil, fmt.Errorf("sorm/migrate: diff: %w", err)
+		return nil, nil, fmt.Errorf("github.com/dvislobokov/sorm/migrate: diff: %w", err)
 	}
 	return drv, changes, nil
 }
@@ -109,7 +109,7 @@ func open(db *sql.DB, dialect string) (atlasmigrate.Driver, error) {
 	case "sqlite":
 		return sqlite.Open(db)
 	default:
-		return nil, fmt.Errorf("sorm/migrate: unknown dialect %q (postgres|mysql|sqlite)", dialect)
+		return nil, fmt.Errorf("github.com/dvislobokov/sorm/migrate: unknown dialect %q (postgres|mysql|sqlite)", dialect)
 	}
 }
 
@@ -125,7 +125,7 @@ func buildSchema(name string, defs []sorm.TableDef, dialect string) (*schema.Sch
 		for _, c := range def.Columns {
 			col, err := buildColumn(c, dialect)
 			if err != nil {
-				return nil, fmt.Errorf("sorm/migrate: %s.%s: %w", def.Name, c.Name, err)
+				return nil, fmt.Errorf("github.com/dvislobokov/sorm/migrate: %s.%s: %w", def.Name, c.Name, err)
 			}
 			t.AddColumns(col)
 			if c.PK {
@@ -158,11 +158,11 @@ func buildSchema(name string, defs []sorm.TableDef, dialect string) (*schema.Sch
 			}
 			ref, ok := tables[c.RefTable]
 			if !ok {
-				return nil, fmt.Errorf("sorm/migrate: %s.%s references unknown table %s", def.Name, c.Name, c.RefTable)
+				return nil, fmt.Errorf("github.com/dvislobokov/sorm/migrate: %s.%s references unknown table %s", def.Name, c.Name, c.RefTable)
 			}
 			refCol, ok := columnOf(ref, c.RefCol)
 			if !ok {
-				return nil, fmt.Errorf("sorm/migrate: %s.%s references unknown column %s.%s", def.Name, c.Name, c.RefTable, c.RefCol)
+				return nil, fmt.Errorf("github.com/dvislobokov/sorm/migrate: %s.%s references unknown column %s.%s", def.Name, c.Name, c.RefTable, c.RefCol)
 			}
 			ownCol, _ := columnOf(t, c.Name)
 			t.AddForeignKeys(
@@ -191,7 +191,7 @@ func buildIndex(t *schema.Table, table string, ix sorm.IndexDef, dialect string)
 		default:
 			col, ok := columnOf(t, part.Column)
 			if !ok {
-				return nil, fmt.Errorf("sorm/migrate: index %s: unknown column %s.%s", ix.Name, table, part.Column)
+				return nil, fmt.Errorf("github.com/dvislobokov/sorm/migrate: index %s: unknown column %s.%s", ix.Name, table, part.Column)
 			}
 			p = schema.NewColumnPart(col)
 		}
@@ -204,7 +204,7 @@ func buildIndex(t *schema.Table, table string, ix sorm.IndexDef, dialect string)
 		case "mysql":
 			sx.AddAttrs(&mysql.IndexType{T: strings.ToUpper(ix.Type)})
 		default:
-			return nil, fmt.Errorf("sorm/migrate: index %s: тип индекса не поддерживается на %s", ix.Name, dialect)
+			return nil, fmt.Errorf("github.com/dvislobokov/sorm/migrate: index %s: тип индекса не поддерживается на %s", ix.Name, dialect)
 		}
 	}
 	if ix.Where != "" {
@@ -214,7 +214,7 @@ func buildIndex(t *schema.Table, table string, ix sorm.IndexDef, dialect string)
 		case "sqlite":
 			sx.AddAttrs(&sqlite.IndexPredicate{P: ix.Where})
 		default:
-			return nil, fmt.Errorf("sorm/migrate: index %s: частичные индексы не поддерживаются на %s", ix.Name, dialect)
+			return nil, fmt.Errorf("github.com/dvislobokov/sorm/migrate: index %s: частичные индексы не поддерживаются на %s", ix.Name, dialect)
 		}
 	}
 	return sx, nil

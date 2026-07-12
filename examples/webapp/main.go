@@ -20,11 +20,11 @@ import (
 	_ "github.com/jackc/pgx/v5/stdlib" // драйвер "pgx" для database/sql (миграции)
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"sorm"
-	"sorm/driver/pgxd"
-	"sorm/examples/webapp/models"
-	gen "sorm/examples/webapp/models/sormgen"
-	"sorm/migrate"
+	"github.com/dvislobokov/sorm"
+	"github.com/dvislobokov/sorm/driver/pgxd"
+	"github.com/dvislobokov/sorm/examples/webapp/models"
+	gen "github.com/dvislobokov/sorm/examples/webapp/models/sormgen"
+	"github.com/dvislobokov/sorm/migrate"
 )
 
 func main() {

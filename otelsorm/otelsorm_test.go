@@ -9,12 +9,12 @@ import (
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 	_ "modernc.org/sqlite"
 
-	"sorm"
-	"sorm/dialect/lite"
-	"sorm/driver/sqld"
-	models "sorm/internal/testmodels"
-	gen "sorm/internal/testmodels/sormgen"
-	"sorm/otelsorm"
+	"github.com/dvislobokov/sorm"
+	"github.com/dvislobokov/sorm/dialect/lite"
+	"github.com/dvislobokov/sorm/driver/sqld"
+	models "github.com/dvislobokov/sorm/internal/testmodels"
+	gen "github.com/dvislobokov/sorm/internal/testmodels/sormgen"
+	"github.com/dvislobokov/sorm/otelsorm"
 )
 
 func TestSpans(t *testing.T) {

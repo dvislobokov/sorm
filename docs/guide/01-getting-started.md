@@ -6,7 +6,7 @@ creates its schema, writes a graph of entities and queries it back.
 ## Installation
 
 ```bash
-go get sorm
+go get github.com/dvislobokov/sorm
 ```
 
 sorm needs Go 1.25+. The core has a single heavy dependency per feature
@@ -31,7 +31,7 @@ with tags and are **not** columns.
 // models/models.go
 package models
 
-//go:generate go run sorm/cmd/sorm gen .
+//go:generate go run github.com/dvislobokov/sorm/cmd/sorm gen .
 
 import "time"
 
@@ -61,7 +61,7 @@ live in your domain layer.
 ```bash
 go generate ./...
 # or explicitly:
-go run sorm/cmd/sorm gen ./models
+go run github.com/dvislobokov/sorm/cmd/sorm gen ./models
 ```
 
 This creates `models/sormgen`: typed column descriptors (`User.Email`,
@@ -78,7 +78,7 @@ sorm talks to databases through adapters implementing `sorm.DB`:
 ```go
 import (
     "github.com/jackc/pgx/v5/pgxpool"
-    "sorm/driver/pgxd"
+    "github.com/dvislobokov/sorm/driver/pgxd"
 )
 
 pool, err := pgxpool.New(ctx, "postgres://user:pass@localhost:5432/app")
@@ -97,7 +97,7 @@ The fastest way during development is a declarative migration from code
 import (
     "database/sql"
     _ "github.com/jackc/pgx/v5/stdlib" // registers driver "pgx"
-    "sorm/migrate"
+    "github.com/dvislobokov/sorm/migrate"
     _ "yourapp/models/sormgen"          // registers table definitions
 )
 
@@ -112,7 +112,7 @@ For production you will want reviewed, versioned migration files — see
 
 ```go
 import (
-    "sorm"
+    "github.com/dvislobokov/sorm"
     "yourapp/models"
     gen "yourapp/models/sormgen"
 )

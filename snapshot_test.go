@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"sorm"
-	models "sorm/internal/testmodels"
+	"github.com/dvislobokov/sorm"
+	models "github.com/dvislobokov/sorm/internal/testmodels"
 )
 
 // Тесты сгенерированных Snapshot/Diff — в том числе ловушки, найденные ревью

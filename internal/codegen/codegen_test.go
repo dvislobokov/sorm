@@ -5,8 +5,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"sorm/internal/codegen"
-	"sorm/internal/parse"
+	"github.com/dvislobokov/sorm/internal/codegen"
+	"github.com/dvislobokov/sorm/internal/parse"
 )
 
 // Golden-тест: генерация из internal/testmodels должна бит-в-бит совпадать

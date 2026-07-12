@@ -17,7 +17,7 @@ import (
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 
-	"sorm"
+	"github.com/dvislobokov/sorm"
 )
 
 type config struct {
@@ -31,7 +31,7 @@ type Option func(*config)
 
 // WithTracerProvider задаёт провайдер (по умолчанию — глобальный otel).
 func WithTracerProvider(tp trace.TracerProvider) Option {
-	return func(c *config) { c.tracer = tp.Tracer("sorm") }
+	return func(c *config) { c.tracer = tp.Tracer("github.com/dvislobokov/sorm") }
 }
 
 // WithArgs включает запись аргументов запроса в атрибуты спана.
@@ -42,7 +42,7 @@ func WithArgs() Option {
 
 // Wrap оборачивает sorm.DB трейсингом.
 func Wrap(db sorm.DB, opts ...Option) sorm.DB {
-	cfg := &config{tracer: otel.Tracer("sorm")}
+	cfg := &config{tracer: otel.Tracer("github.com/dvislobokov/sorm")}
 	for _, o := range opts {
 		o(cfg)
 	}

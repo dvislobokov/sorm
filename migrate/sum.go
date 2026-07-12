@@ -29,7 +29,7 @@ type SumError struct {
 }
 
 func (e *SumError) Error() string {
-	return fmt.Sprintf("sorm/migrate: каталог миграций не совпадает с %s: изменены %v, отсутствуют %v, лишние %v",
+	return fmt.Sprintf("github.com/dvislobokov/sorm/migrate: каталог миграций не совпадает с %s: изменены %v, отсутствуют %v, лишние %v",
 		SumFile, e.Modified, e.Missing, e.Extra)
 }
 
@@ -69,7 +69,7 @@ func VerifySum(dir string) error {
 		}
 		sum, name, ok := strings.Cut(line, "  ")
 		if !ok {
-			return fmt.Errorf("sorm/migrate: битая строка в %s: %q", SumFile, line)
+			return fmt.Errorf("github.com/dvislobokov/sorm/migrate: битая строка в %s: %q", SumFile, line)
 		}
 		want[name] = sum
 	}

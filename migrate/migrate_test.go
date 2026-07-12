@@ -10,12 +10,12 @@ import (
 	_ "github.com/jackc/pgx/v5/stdlib" // регистрирует драйвер "pgx" в database/sql
 	_ "modernc.org/sqlite"
 
-	"sorm"
-	"sorm/dialect/lite"
-	"sorm/driver/sqld"
-	"sorm/migrate"
-	models "sorm/internal/testmodels"
-	gen "sorm/internal/testmodels/sormgen"
+	"github.com/dvislobokov/sorm"
+	"github.com/dvislobokov/sorm/dialect/lite"
+	"github.com/dvislobokov/sorm/driver/sqld"
+	"github.com/dvislobokov/sorm/migrate"
+	models "github.com/dvislobokov/sorm/internal/testmodels"
+	gen "github.com/dvislobokov/sorm/internal/testmodels/sormgen"
 )
 
 var _ = gen.User // импорт sormgen регистрирует TableDef'ы

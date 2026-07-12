@@ -3,7 +3,7 @@ package sorm
 import (
 	"strings"
 
-	"sorm/dialect"
+	"github.com/dvislobokov/sorm/dialect"
 )
 
 // Pred — иммутабельное условие, параметризованное сущностью: условие по одной

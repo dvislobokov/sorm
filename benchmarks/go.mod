@@ -7,7 +7,6 @@ require (
 	github.com/glebarez/go-sqlite v1.21.2
 	github.com/glebarez/sqlite v1.11.0
 	gorm.io/gorm v1.31.2
-	sorm v0.0.0
 )
 
 require (
@@ -16,6 +15,7 @@ require (
 	github.com/apparentlymart/go-textseg/v15 v15.0.0 // indirect
 	github.com/bmatcuk/doublestar v1.3.4 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
+	github.com/dvislobokov/sorm v0.0.0
 	github.com/go-openapi/inflect v0.19.0 // indirect
 	github.com/google/go-cmp v0.7.0 // indirect
 	github.com/google/uuid v1.6.0 // indirect
@@ -38,4 +38,4 @@ require (
 	modernc.org/sqlite v1.53.0 // indirect
 )
 
-replace sorm => ../
+replace github.com/dvislobokov/sorm => ../

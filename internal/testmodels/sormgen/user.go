@@ -7,9 +7,9 @@ import (
 	"slices"
 	"time"
 
-	"sorm"
+	"github.com/dvislobokov/sorm"
 
-	models "sorm/internal/testmodels"
+	models "github.com/dvislobokov/sorm/internal/testmodels"
 )
 
 // User — типизированные дескрипторы колонок models.User.

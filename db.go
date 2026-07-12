@@ -3,7 +3,7 @@ package sorm
 import (
 	"context"
 
-	"sorm/dialect"
+	"github.com/dvislobokov/sorm/dialect"
 )
 
 // DB — драйверная абстракция sorm. Рантайм не зависит от конкретного

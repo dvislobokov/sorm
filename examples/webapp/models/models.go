@@ -3,7 +3,7 @@
 // каждый файл сгенерирован `sorm migrate diff` (см. README).
 package models
 
-//go:generate go run sorm/cmd/sorm gen .
+//go:generate go run github.com/dvislobokov/sorm/cmd/sorm gen .
 
 import "time"
 

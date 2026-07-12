@@ -18,7 +18,7 @@ The safe replacement for "AutoMigrate" — inspect, diff, reconcile:
 import (
     "database/sql"
     _ "github.com/jackc/pgx/v5/stdlib"
-    "sorm/migrate"
+    "github.com/dvislobokov/sorm/migrate"
     _ "yourapp/models/sormgen"
 )
 

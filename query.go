@@ -7,8 +7,8 @@ import (
 	"slices"
 	"strconv"
 
-	"sorm/dialect"
-	"sorm/dialect/pg"
+	"github.com/dvislobokov/sorm/dialect"
+	"github.com/dvislobokov/sorm/dialect/pg"
 )
 
 // defaultDialect — фолбэк для инспекции SQL без подключения (Query[E](nil).ToSQL()).

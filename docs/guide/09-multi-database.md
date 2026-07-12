@@ -10,7 +10,7 @@ talks to `sorm.DB`, and adapters translate.
 ```go
 import (
     "github.com/jackc/pgx/v5/pgxpool"
-    "sorm/driver/pgxd"
+    "github.com/dvislobokov/sorm/driver/pgxd"
 )
 
 pool, _ := pgxpool.New(ctx, dsn)
@@ -30,9 +30,9 @@ import (
     "database/sql"
     _ "github.com/go-sql-driver/mysql"
     _ "modernc.org/sqlite"
-    "sorm/dialect/lite"
-    "sorm/dialect/my"
-    "sorm/driver/sqld"
+    "github.com/dvislobokov/sorm/dialect/lite"
+    "github.com/dvislobokov/sorm/dialect/my"
+    "github.com/dvislobokov/sorm/driver/sqld"
 )
 
 mysqlDB, _ := sql.Open("mysql", "user:pass@tcp(host:3306)/app?parseTime=true")

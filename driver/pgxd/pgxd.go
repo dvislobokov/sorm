@@ -10,9 +10,9 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 
-	"sorm"
-	"sorm/dialect"
-	"sorm/dialect/pg"
+	"github.com/dvislobokov/sorm"
+	"github.com/dvislobokov/sorm/dialect"
+	"github.com/dvislobokov/sorm/dialect/pg"
 )
 
 // Pgx — общая поверхность pgxpool.Pool / *pgx.Conn / pgx.Tx.

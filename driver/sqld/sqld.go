@@ -10,8 +10,8 @@ import (
 	"fmt"
 	"strings"
 
-	"sorm"
-	"sorm/dialect"
+	"github.com/dvislobokov/sorm"
+	"github.com/dvislobokov/sorm/dialect"
 )
 
 // Wrap оборачивает *sql.DB в sorm.DB с указанным диалектом

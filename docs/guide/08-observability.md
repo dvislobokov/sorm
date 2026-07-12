@@ -32,7 +32,7 @@ acceptable. Wrappers compose: transactions opened through an instrumented
 otel-free — the dependency links only if you import the package):
 
 ```go
-import "sorm/otelsorm"
+import "github.com/dvislobokov/sorm/otelsorm"
 
 db = otelsorm.Wrap(db)                              // global TracerProvider
 db = otelsorm.Wrap(db,

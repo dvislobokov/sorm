@@ -4,9 +4,9 @@ import (
 	"context"
 	"testing"
 
-	"sorm"
-	models "sorm/internal/testmodels"
-	gen "sorm/internal/testmodels/sormgen"
+	"github.com/dvislobokov/sorm"
+	models "github.com/dvislobokov/sorm/internal/testmodels"
+	gen "github.com/dvislobokov/sorm/internal/testmodels/sormgen"
 )
 
 // Строковый (UUID) PK, назначаемый клиентом: insert без RETURNING,

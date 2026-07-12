@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	"sorm"
-	models "sorm/internal/testmodels"
+	"github.com/dvislobokov/sorm"
+	models "github.com/dvislobokov/sorm/internal/testmodels"
 )
 
 func TestUpdateToSQL(t *testing.T) {

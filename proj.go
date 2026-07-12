@@ -8,7 +8,7 @@ import (
 	"slices"
 	"strconv"
 
-	"sorm/dialect"
+	"github.com/dvislobokov/sorm/dialect"
 )
 
 // Проекционный слой: GROUP BY, HAVING, агрегации, произвольные JOIN.

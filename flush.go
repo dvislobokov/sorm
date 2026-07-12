@@ -7,7 +7,7 @@ import (
 	"sort"
 	"strings"
 
-	"sorm/dialect"
+	"github.com/dvislobokov/sorm/dialect"
 )
 
 // flushPlan — собранный план записи: statements и граф зависимостей вставок.

@@ -3,9 +3,9 @@ package sorm_test
 import (
 	"testing"
 
-	"sorm"
-	models "sorm/internal/testmodels"
-	gen "sorm/internal/testmodels/sormgen"
+	"github.com/dvislobokov/sorm"
+	models "github.com/dvislobokov/sorm/internal/testmodels"
+	gen "github.com/dvislobokov/sorm/internal/testmodels/sormgen"
 )
 
 // Тесты работают на коде, сгенерированном `sorm gen` из internal/testmodels.

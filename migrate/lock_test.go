@@ -7,7 +7,7 @@ import (
 	"sync"
 	"testing"
 
-	"sorm/migrate"
+	"github.com/dvislobokov/sorm/migrate"
 )
 
 // Гонка реплик: несколько экземпляров одновременно вызывают Up —

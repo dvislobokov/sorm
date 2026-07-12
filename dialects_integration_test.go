@@ -12,14 +12,14 @@ import (
 	_ "github.com/go-sql-driver/mysql"
 	_ "modernc.org/sqlite"
 
-	"sorm"
-	"sorm/dialect/lite"
-	"sorm/dialect/my"
-	"sorm/driver/sqld"
-	"sorm/internal/ddl"
-	"sorm/internal/parse"
-	models "sorm/internal/testmodels"
-	gen "sorm/internal/testmodels/sormgen"
+	"github.com/dvislobokov/sorm"
+	"github.com/dvislobokov/sorm/dialect/lite"
+	"github.com/dvislobokov/sorm/dialect/my"
+	"github.com/dvislobokov/sorm/driver/sqld"
+	"github.com/dvislobokov/sorm/internal/ddl"
+	"github.com/dvislobokov/sorm/internal/parse"
+	models "github.com/dvislobokov/sorm/internal/testmodels"
+	gen "github.com/dvislobokov/sorm/internal/testmodels/sormgen"
 )
 
 // generatedDDL — CREATE TABLE из `sorm schema`: интеграционные тесты работают

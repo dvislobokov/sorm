@@ -7,11 +7,11 @@ import (
 	"strings"
 	"testing"
 
-	"sorm"
-	"sorm/dialect/lite"
-	"sorm/driver/sqld"
-	"sorm/migrate"
-	models "sorm/internal/testmodels"
+	"github.com/dvislobokov/sorm"
+	"github.com/dvislobokov/sorm/dialect/lite"
+	"github.com/dvislobokov/sorm/driver/sqld"
+	"github.com/dvislobokov/sorm/migrate"
+	models "github.com/dvislobokov/sorm/internal/testmodels"
 )
 
 func TestVersionedFullCycle(t *testing.T) {

@@ -5,9 +5,9 @@ package sormgen
 import (
 	"time"
 
-	"sorm"
+	"github.com/dvislobokov/sorm"
 
-	models "sorm/examples/blog/models"
+	models "github.com/dvislobokov/sorm/examples/blog/models"
 )
 
 // Article — типизированные дескрипторы колонок models.Article.

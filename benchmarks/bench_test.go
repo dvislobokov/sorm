@@ -21,9 +21,9 @@ import (
 	"sorm-benchmarks/models"
 	_ "sorm-benchmarks/models/sormgen" // регистрирует мету BenchUser
 
-	"sorm"
-	"sorm/dialect/lite"
-	"sorm/driver/sqld"
+	"github.com/dvislobokov/sorm"
+	"github.com/dvislobokov/sorm/dialect/lite"
+	"github.com/dvislobokov/sorm/driver/sqld"
 )
 
 const (

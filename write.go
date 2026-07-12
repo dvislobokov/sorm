@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"slices"
 
-	"sorm/dialect"
+	"github.com/dvislobokov/sorm/dialect"
 )
 
 // Update — set-based UPDATE без сессии (аналог ExecuteUpdate в EF Core).

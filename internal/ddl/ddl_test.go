@@ -5,9 +5,9 @@ import (
 	"strings"
 	"testing"
 
-	"sorm"
-	"sorm/internal/ddl"
-	"sorm/internal/parse"
+	"github.com/dvislobokov/sorm"
+	"github.com/dvislobokov/sorm/internal/ddl"
+	"github.com/dvislobokov/sorm/internal/parse"
 )
 
 func loadTestSchema(t *testing.T) *parse.Schema {

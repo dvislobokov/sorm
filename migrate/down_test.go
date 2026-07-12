@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"sorm/migrate"
+	"github.com/dvislobokov/sorm/migrate"
 )
 
 func TestDownAndChecksums(t *testing.T) {

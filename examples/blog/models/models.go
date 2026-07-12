@@ -2,7 +2,7 @@
 // После изменения схемы: go generate ./...
 package models
 
-//go:generate go run sorm/cmd/sorm gen .
+//go:generate go run github.com/dvislobokov/sorm/cmd/sorm gen .
 
 import "time"
 

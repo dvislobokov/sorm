@@ -23,11 +23,11 @@ import (
 	_ "github.com/jackc/pgx/v5/stdlib"
 	_ "modernc.org/sqlite"
 
-	"sorm"
-	"sorm/internal/codegen"
-	"sorm/internal/ddl"
-	"sorm/internal/parse"
-	"sorm/migrate"
+	"github.com/dvislobokov/sorm"
+	"github.com/dvislobokov/sorm/internal/codegen"
+	"github.com/dvislobokov/sorm/internal/ddl"
+	"github.com/dvislobokov/sorm/internal/parse"
+	"github.com/dvislobokov/sorm/migrate"
 )
 
 func main() {

@@ -3,7 +3,7 @@
 package sormgen
 
 import (
-	"sorm"
+	"github.com/dvislobokov/sorm"
 
 	models "sorm-benchmarks/models"
 )

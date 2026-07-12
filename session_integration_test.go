@@ -8,10 +8,10 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"sorm"
-	"sorm/driver/pgxd"
-	models "sorm/internal/testmodels"
-	gen "sorm/internal/testmodels/sormgen"
+	"github.com/dvislobokov/sorm"
+	"github.com/dvislobokov/sorm/driver/pgxd"
+	models "github.com/dvislobokov/sorm/internal/testmodels"
+	gen "github.com/dvislobokov/sorm/internal/testmodels/sormgen"
 )
 
 // Интеграционные тесты сессии: живой PostgreSQL.

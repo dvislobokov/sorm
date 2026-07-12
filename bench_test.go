@@ -8,13 +8,13 @@ import (
 
 	_ "modernc.org/sqlite"
 
-	"sorm"
-	"sorm/dialect/lite"
-	"sorm/driver/sqld"
-	"sorm/internal/ddl"
-	"sorm/internal/parse"
-	models "sorm/internal/testmodels"
-	"sorm/migrate"
+	"github.com/dvislobokov/sorm"
+	"github.com/dvislobokov/sorm/dialect/lite"
+	"github.com/dvislobokov/sorm/driver/sqld"
+	"github.com/dvislobokov/sorm/internal/ddl"
+	"github.com/dvislobokov/sorm/internal/parse"
+	models "github.com/dvislobokov/sorm/internal/testmodels"
+	"github.com/dvislobokov/sorm/migrate"
 )
 
 // Микробенчмарки против raw database/sql на SQLite in-memory (без сети —

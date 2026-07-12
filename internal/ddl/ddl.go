@@ -9,8 +9,8 @@ import (
 	"sort"
 	"strings"
 
-	"sorm"
-	"sorm/internal/parse"
+	"github.com/dvislobokov/sorm"
+	"github.com/dvislobokov/sorm/internal/parse"
 )
 
 // ColumnDefOf — конвертация поля схемы в рантаймовое описание колонки
