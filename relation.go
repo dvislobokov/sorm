@@ -67,10 +67,42 @@ func (r HasMany[E, C]) exists(preds []Pred[C], not bool) Pred[E] {
 	})
 }
 
+// ChildOpt — опция Include: предикат по детям (Pred[C]), сортировка детей
+// (Order[C]) или вложенная спецификация (IncludeSpec[C] — аналог ThenInclude):
+//
+//	q.With(u.Posts.Include(
+//	    p.Title.HasPrefix("Go"),      // фильтр детей
+//	    p.CreatedAt.Desc(),           // порядок детей
+//	    p.Comments.Include(),         // вложенная загрузка
+//	))
+type ChildOpt[C any] interface {
+	applyChild(cfg *childCfg[C])
+}
+
+type childCfg[C any] struct {
+	preds  []Pred[C]
+	orders []Order[C]
+	specs  []IncludeSpec[C]
+}
+
+func (p Pred[C]) applyChild(cfg *childCfg[C])        { cfg.preds = append(cfg.preds, p) }
+func (o Order[C]) applyChild(cfg *childCfg[C])       { cfg.orders = append(cfg.orders, o) }
+func (s IncludeSpec[C]) applyChild(cfg *childCfg[C]) { cfg.specs = append(cfg.specs, s) }
+
+func childConfig[C any](opts []ChildOpt[C]) childCfg[C] {
+	var cfg childCfg[C]
+	for _, o := range opts {
+		o.applyChild(&cfg)
+	}
+	return cfg
+}
+
 // Include — eager loading детей (split-стратегия: отдельный запрос
 // WHERE fk IN (pks) и раскладка по родителям in-memory).
-// preds фильтруют детей, не родителей.
-func (r HasMany[E, C]) Include(preds ...Pred[C]) IncludeSpec[E] {
+// Опции: Pred[C] (фильтр детей), Order[C] (их порядок), IncludeSpec[C]
+// (вложенная загрузка — аналог ThenInclude).
+func (r HasMany[E, C]) Include(opts ...ChildOpt[C]) IncludeSpec[E] {
+	cfg := childConfig(opts)
 	return IncludeSpec[E]{load: func(ctx context.Context, db DB, sess *Session, parents []*E) error {
 		if len(parents) == 0 {
 			return nil
@@ -86,10 +118,12 @@ func (r HasMany[E, C]) Include(preds ...Pred[C]) IncludeSpec[E] {
 			r.initSlice(p) // загруженная пустая связь = пустой слайс, не nil
 		}
 
+		var all []*C
 		for _, chunk := range chunked(keys) {
 			cq := Query[C](db).
 				Where(pred[C](inNode{colRef{name: r.fkCol}, chunk, false})).
-				Where(preds...)
+				Where(cfg.preds...).
+				OrderBy(cfg.orders...)
 			cq.sess = sess // Track трекает и детей
 			children, err := cq.All(ctx)
 			if err != nil {
@@ -100,8 +134,9 @@ func (r HasMany[E, C]) Include(preds ...Pred[C]) IncludeSpec[E] {
 					r.appendChild(p, c)
 				}
 			}
+			all = append(all, children...)
 		}
-		return nil
+		return runChildSpecs(ctx, db, sess, cfg.specs, all)
 	}}
 }
 
@@ -109,6 +144,16 @@ func (r HasMany[E, C]) Include(preds ...Pred[C]) IncludeSpec[E] {
 // сущности; создаётся методами дескрипторов связей, исполняется билдером.
 type IncludeSpec[E any] struct {
 	load func(ctx context.Context, db DB, sess *Session, parents []*E) error
+}
+
+// runChildSpecs выполняет вложенные Include над загруженными детьми.
+func runChildSpecs[C any](ctx context.Context, db DB, sess *Session, specs []IncludeSpec[C], children []*C) error {
+	for _, sp := range specs {
+		if err := sp.load(ctx, db, sess, children); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // BelongsTo — дескриптор связи «многие к одному» (ребёнок → родитель).
@@ -141,9 +186,11 @@ func (r BelongsTo[C, P]) Is(preds ...Pred[P]) Pred[C] {
 }
 
 // Include — eager loading родителя: один запрос WHERE pk IN (fk детей)
-// и раскладка по детям. preds фильтруют родителей; у ребёнка, чей родитель
-// отфильтрован, навигация остаётся nil.
-func (r BelongsTo[C, P]) Include(preds ...Pred[P]) IncludeSpec[C] {
+// и раскладка по детям. Pred[P]-опции фильтруют родителей; у ребёнка, чей
+// родитель отфильтрован, навигация остаётся nil. IncludeSpec[P]-опции —
+// вложенная загрузка связей родителя.
+func (r BelongsTo[C, P]) Include(opts ...ChildOpt[P]) IncludeSpec[C] {
+	cfg := childConfig(opts)
 	return IncludeSpec[C]{load: func(ctx context.Context, db DB, sess *Session, children []*C) error {
 		if len(children) == 0 {
 			return nil
@@ -165,10 +212,11 @@ func (r BelongsTo[C, P]) Include(preds ...Pred[P]) IncludeSpec[C] {
 		}
 
 		byPK := map[any]*P{}
+		var all []*P
 		for _, chunk := range chunked(keys) {
 			pq := Query[P](db).
 				Where(pred[P](inNode{colRef{name: pm.PK}, chunk, false})).
-				Where(preds...)
+				Where(cfg.preds...)
 			pq.sess = sess // Track трекает и родителей
 			parents, err := pq.All(ctx)
 			if err != nil {
@@ -177,12 +225,86 @@ func (r BelongsTo[C, P]) Include(preds ...Pred[P]) IncludeSpec[C] {
 			for _, p := range parents {
 				byPK[pm.PKValue(p)] = p
 			}
+			all = append(all, parents...)
 		}
 		for _, c := range children {
 			if p, ok := byPK[r.childFK(c)]; ok {
 				r.setParent(c, p)
 			}
 		}
-		return nil
+		return runChildSpecs(ctx, db, sess, cfg.specs, all)
+	}}
+}
+
+// HasOne — связь «один к одному» (FK на стороне ребёнка C, навигация *C у E).
+// Отсутствие ребёнка после Include неотличимо от «не загружено» (указатель
+// остаётся nil) — в отличие от hasMany, где пустой слайс ≠ nil.
+type HasOne[E, C any] struct {
+	fkCol     string
+	parentKey func(*E) any
+	childKey  func(*C) any
+	setChild  func(*E, *C)
+}
+
+func NewHasOne[E, C any](
+	fkCol string,
+	parentKey func(*E) any,
+	childKey func(*C) any,
+	setChild func(*E, *C),
+) HasOne[E, C] {
+	return HasOne[E, C]{fkCol, parentKey, childKey, setChild}
+}
+
+// Any — фильтр родителя по ребёнку (EXISTS), None — отсутствие ребёнка.
+func (r HasOne[E, C]) Any(preds ...Pred[C]) Pred[E]  { return r.exists(preds, false) }
+func (r HasOne[E, C]) None(preds ...Pred[C]) Pred[E] { return r.exists(preds, true) }
+
+func (r HasOne[E, C]) exists(preds []Pred[C], not bool) Pred[E] {
+	pm, cm := metaFor[E](), metaFor[C]()
+	return pred[E](existsNode{
+		childTable:  cm.Table,
+		fkCol:       r.fkCol,
+		parentTable: pm.Table,
+		parentPK:    pm.PK,
+		preds:       nodesOf(preds),
+		not:         not,
+	})
+}
+
+// Include — eager loading единственного ребёнка (WHERE fk IN (pks)).
+func (r HasOne[E, C]) Include(opts ...ChildOpt[C]) IncludeSpec[E] {
+	cfg := childConfig(opts)
+	return IncludeSpec[E]{load: func(ctx context.Context, db DB, sess *Session, parents []*E) error {
+		if len(parents) == 0 {
+			return nil
+		}
+		keys := make([]any, 0, len(parents))
+		byKey := make(map[any][]*E, len(parents))
+		for _, p := range parents {
+			k := r.parentKey(p)
+			if _, seen := byKey[k]; !seen {
+				keys = append(keys, k)
+			}
+			byKey[k] = append(byKey[k], p)
+		}
+
+		var all []*C
+		for _, chunk := range chunked(keys) {
+			cq := Query[C](db).
+				Where(pred[C](inNode{colRef{name: r.fkCol}, chunk, false})).
+				Where(cfg.preds...)
+			cq.sess = sess
+			children, err := cq.All(ctx)
+			if err != nil {
+				return fmt.Errorf("include: %w", err)
+			}
+			for _, c := range children {
+				for _, p := range byKey[r.childKey(c)] {
+					r.setChild(p, c)
+				}
+			}
+			all = append(all, children...)
+		}
+		return runChildSpecs(ctx, db, sess, cfg.specs, all)
 	}}
 }

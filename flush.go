@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"reflect"
 	"sort"
+	"strings"
 
 	"sorm/dialect"
 )
@@ -166,33 +167,38 @@ func buildInsertItem(d dialect.Dialect, group []*insertNode) BatchItem {
 }
 
 func multiInsertSQL(d dialect.Dialect, n *insertNode, rows int) string {
-	sql := "INSERT INTO " + d.QuoteIdent(n.table) + " ("
+	var b strings.Builder
+	b.Grow(64 + rows*len(n.insertCols)*5)
+	b.WriteString("INSERT INTO ")
+	b.WriteString(d.QuoteIdent(n.table))
+	b.WriteString(" (")
 	for i, c := range n.insertCols {
 		if i > 0 {
-			sql += ", "
+			b.WriteString(", ")
 		}
-		sql += d.QuoteIdent(c)
+		b.WriteString(d.QuoteIdent(c))
 	}
-	sql += ") VALUES "
+	b.WriteString(") VALUES ")
 	arg := 0
 	for r := 0; r < rows; r++ {
 		if r > 0 {
-			sql += ", "
+			b.WriteString(", ")
 		}
-		sql += "("
+		b.WriteByte('(')
 		for i := range n.insertCols {
 			if i > 0 {
-				sql += ", "
+				b.WriteString(", ")
 			}
 			arg++
-			sql += d.Placeholder(arg)
+			b.WriteString(d.Placeholder(arg))
 		}
-		sql += ")"
+		b.WriteByte(')')
 	}
 	if n.auto && d.ReturningSupported() {
-		sql += " RETURNING " + d.QuoteIdent(n.pkCol)
+		b.WriteString(" RETURNING ")
+		b.WriteString(d.QuoteIdent(n.pkCol))
 	}
-	return sql
+	return b.String()
 }
 
 func storesSorted(s *Session) []anyStore {

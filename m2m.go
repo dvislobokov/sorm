@@ -93,7 +93,9 @@ func (r ManyToMany[E, C]) Any(preds ...Pred[C]) Pred[E] {
 
 // Include — eager loading связанных C: пары из join-таблицы + загрузка
 // детей одним IN-запросом (с чанкованием), раскладка по родителям.
-func (r ManyToMany[E, C]) Include(preds ...Pred[C]) IncludeSpec[E] {
+// Order[C]-опции задают порядок детей у каждого родителя.
+func (r ManyToMany[E, C]) Include(opts ...ChildOpt[C]) IncludeSpec[E] {
+	cfg := childConfig(opts)
 	return IncludeSpec[E]{load: func(ctx context.Context, db DB, sess *Session, parents []*E) error {
 		if len(parents) == 0 {
 			return nil
@@ -161,31 +163,32 @@ func (r ManyToMany[E, C]) Include(preds ...Pred[C]) IncludeSpec[E] {
 			return nil
 		}
 
-		// 2. дети одним IN-запросом
-		childByPK := map[any]*C{}
+		// 2. дети одним IN-запросом (порядок — из cfg.orders)
+		var childList []*C
 		for _, chunk := range chunked(childKeys) {
 			cq := Query[C](db).
 				Where(pred[C](inNode{colRef{name: cm.PK}, chunk, false})).
-				Where(preds...)
+				Where(cfg.preds...).
+				OrderBy(cfg.orders...)
 			cq.sess = sess
 			children, err := cq.All(ctx)
 			if err != nil {
 				return fmt.Errorf("include %s: %w", r.joinTable, err)
 			}
-			for _, c := range children {
-				childByPK[normalizeKey(cm.PKValue(c))] = c
-			}
+			childList = append(childList, children...)
 		}
 
-		// 3. раскладка
+		// 3. раскладка: обходим детей в порядке запроса — Order[C] соблюдён
+		parentsByChild := map[any][]any{}
 		for _, pr := range pairs {
-			c, ok := childByPK[pr.c]
-			if !ok {
-				continue // ребёнок отфильтрован preds
-			}
-			r.appendChild(byKey[pr.p], c)
+			parentsByChild[pr.c] = append(parentsByChild[pr.c], pr.p)
 		}
-		return nil
+		for _, c := range childList {
+			for _, pk := range parentsByChild[normalizeKey(cm.PKValue(c))] {
+				r.appendChild(byKey[pk], c)
+			}
+		}
+		return runChildSpecs(ctx, db, sess, cfg.specs, childList)
 	}}
 }
 

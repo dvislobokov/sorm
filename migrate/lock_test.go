@@ -22,6 +22,7 @@ func TestConcurrentUpPostgres(t *testing.T) {
 	}
 	defer setup.Close()
 	for _, q := range []string{
+		`DROP TABLE IF EXISTS profiles`,
 		`DROP TABLE IF EXISTS user_tags`, `DROP TABLE IF EXISTS tags`,
 		`DROP TABLE IF EXISTS api_keys`, `DROP TABLE IF EXISTS posts`, `DROP TABLE IF EXISTS users`,
 		`DROP TABLE IF EXISTS ` + migrate.HistoryTable,

@@ -116,6 +116,10 @@ func genEntity(s *parse.Schema, e parse.Entity) ([]byte, error) {
 	for _, r := range m2ms {
 		g.pf("\t%s sorm.ManyToMany[%s, models.%s]\n", r.GoName, entT, r.Target)
 	}
+	hasOnes := relationsOf(e, "hasOne")
+	for _, r := range hasOnes {
+		g.pf("\t%s sorm.HasOne[%s, models.%s]\n", r.GoName, entT, r.Target)
+	}
 	g.pf("}{\n")
 	for _, f := range e.Fields {
 		g.pf("\t%s: %s(%q, %q),\n", f.GoName, descCtor(entT, f), e.Table, f.Col)
@@ -152,6 +156,19 @@ func genEntity(s *parse.Schema, e parse.Entity) ([]byte, error) {
 		g.pf("\t\t%q, %q, %q,\n", r.JoinTable, parse.Snake(e.Name)+"_id", parse.Snake(r.Target)+"_id")
 		g.pf("\t\tfunc(e *%s) { e.%s = []*%s{} },\n", entT, r.GoName, childT)
 		g.pf("\t\tfunc(e *%s, c *%s) { e.%s = append(e.%s, c) },\n", entT, childT, r.GoName, r.GoName)
+		g.pf("\t),\n")
+	}
+	for _, r := range hasOnes {
+		fkCol, err := fkColOf(s, r)
+		if err != nil {
+			return nil, err
+		}
+		childT := "models." + r.Target
+		g.pf("\t%s: sorm.NewHasOne[%s, %s](\n", r.GoName, entT, childT)
+		g.pf("\t\t%q,\n", fkCol)
+		g.pf("\t\tfunc(e *%s) any { return e.%s },\n", entT, e.PK().GoName)
+		g.pf("\t\tfunc(c *%s) any { return c.%s },\n", childT, r.FKField)
+		g.pf("\t\tfunc(e *%s, c *%s) { e.%s = c },\n", entT, childT, r.GoName)
 		g.pf("\t),\n")
 	}
 	g.pf("}\n\n")

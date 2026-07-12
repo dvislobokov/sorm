@@ -27,6 +27,7 @@ var User = struct {
 	Version   sorm.OrdCol[models.User, int64]
 	Posts     sorm.HasMany[models.User, models.Post]
 	Tags      sorm.ManyToMany[models.User, models.Tag]
+	Profile   sorm.HasOne[models.User, models.Profile]
 }{
 	ID:        sorm.NewOrdCol[models.User, int64]("users", "id"),
 	Email:     sorm.NewStrCol[models.User]("users", "email"),
@@ -50,6 +51,12 @@ var User = struct {
 		"user_tags", "user_id", "tag_id",
 		func(e *models.User) { e.Tags = []*models.Tag{} },
 		func(e *models.User, c *models.Tag) { e.Tags = append(e.Tags, c) },
+	),
+	Profile: sorm.NewHasOne[models.User, models.Profile](
+		"user_id",
+		func(e *models.User) any { return e.ID },
+		func(c *models.Profile) any { return c.UserID },
+		func(e *models.User, c *models.Profile) { e.Profile = c },
 	),
 }
 

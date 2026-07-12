@@ -23,8 +23,16 @@ type User struct {
 	CreatedAt time.Time
 	DeletedAt *time.Time
 	Version   int64   `sorm:"version"`
-	Posts     []*Post `sorm:"hasMany:AuthorID"`
-	Tags      []*Tag  `sorm:"many2many:user_tags"`
+	Posts     []*Post  `sorm:"hasMany:AuthorID"`
+	Tags      []*Tag   `sorm:"many2many:user_tags"`
+	Profile   *Profile `sorm:"hasOne:UserID"`
+}
+
+// Profile — hasOne-сторона: FK у ребёнка, навигация-указатель у родителя.
+type Profile struct {
+	ID     int64  `sorm:"pk,auto"`
+	UserID int64  `sorm:"fk:User.ID,uniqueIndex:uq_profiles_user"`
+	Bio    string
 }
 
 // Tag — сторона many2many (join-таблица user_tags генерируется неявно).
