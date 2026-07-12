@@ -378,6 +378,33 @@ func genEntity(s *parse.Schema, e parse.Entity) ([]byte, error) {
 		}
 	}
 	g.pf("\tPKValue: func(e *%s) any { return e.%s },\n", entT, e.PK().GoName)
+
+	// Auto-timestamps: autoCreate stamps zero fields on insert (a manual
+	// value wins), autoUpdate stamps unconditionally.
+	var creates, updates []string
+	for _, f := range e.Fields {
+		if f.AutoCreate {
+			creates = append(creates, f.GoName)
+		}
+		if f.AutoUpdate {
+			updates = append(updates, f.GoName)
+		}
+	}
+	if len(creates) > 0 {
+		g.pf("\tTouchCreate: func(e *%s, t time.Time) {\n", entT)
+		for _, name := range creates {
+			g.pf("\t\tif e.%s.IsZero() {\n\t\t\te.%s = t\n\t\t}\n", name, name)
+		}
+		g.pf("\t},\n")
+	}
+	if len(updates) > 0 {
+		g.pf("\tTouchUpdate: func(e *%s, t time.Time) {\n", entT)
+		for _, name := range updates {
+			g.pf("\t\te.%s = t\n", name)
+		}
+		g.pf("\t},\n")
+	}
+
 	if e.VersionIndex >= 0 {
 		vf := e.Fields[e.VersionIndex].GoName
 		g.pf("\tGetVersion: func(e *%s) int64 { return e.%s },\n", entT, vf)

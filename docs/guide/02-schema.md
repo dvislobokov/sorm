@@ -27,6 +27,8 @@ Options are comma-separated inside one `sorm:"..."` tag.
 | `auto` | the database generates the PK (identity / auto-increment). Must be an integer type. Without `auto`, you assign the PK yourself — strings/UUIDs work |
 | `unique` | single-column UNIQUE constraint |
 | `version` | optimistic-concurrency token; must be a plain `int64`. Initialized to 1 on insert, incremented on every update |
+| `autoCreate` | auto-timestamp; plain `time.Time`. Stamped on INSERT when zero — a manually set value wins |
+| `autoUpdate` | auto-timestamp; plain `time.Time`. Stamped on INSERT and on every effective UPDATE (a no-op flush does not touch it). All stamps in one `SaveChanges` share a single timestamp. Set-based `sorm.Update` does **not** stamp it — add the assignment explicitly |
 | `col:name` | override the column name (default: `snake_case` of the field name) |
 | `type:sqltype` | override the SQL column type, e.g. `type:text`, `type:varchar(36)` |
 | `fk:Entity.Field` | declares a foreign key to another entity's field (adds `REFERENCES` in DDL and an edge for write ordering) |

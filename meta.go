@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"reflect"
 	"sync"
+	"time"
 )
 
 // Meta describes an entity to the runtime. In production code it is generated
@@ -36,6 +37,12 @@ type Meta[E any] struct {
 	// GetVersion/SetVersion — only when VersionCol != "".
 	GetVersion func(*E) int64
 	SetVersion func(*E, int64)
+	// TouchCreate/TouchUpdate — auto-timestamps (sorm:"autoCreate"/"autoUpdate").
+	// Nil when the entity has no such fields. TouchCreate stamps zero-valued
+	// autoCreate fields on INSERT (a manually set value wins); TouchUpdate
+	// stamps autoUpdate fields on INSERT and on every effective UPDATE.
+	TouchCreate func(*E, time.Time)
+	TouchUpdate func(*E, time.Time)
 	// Refs — belongsTo navigations of this entity: edges for per-instance
 	// toposort and FK fixup of new graphs.
 	Refs []Ref[E]

@@ -120,7 +120,7 @@ func TestProjectIntegration(t *testing.T) {
 	seedAlice(t, pool)
 	mustExec(t, pool, `INSERT INTO users (email, name, active, age, balance, created_at, version)
 		VALUES ('b@b.c', 'Bob', true, 30, 0, now(), 1), ('c@b.c', 'Cid', false, 40, 0, now(), 1)`)
-	mustExec(t, pool, `INSERT INTO posts (author_id, title, body, views) VALUES (1, 't1', '', 0), (1, 't2', '', 0), (2, 't3', '', 0)`)
+	mustExec(t, pool, `INSERT INTO posts (author_id, title, body, views, created_at, updated_at) VALUES (1, 't1', '', 0, now(), now()), (1, 't2', '', 0, now(), now()), (2, 't3', '', 0, now(), now())`)
 
 	// GROUP BY + HAVING.
 	stats, err := sorm.Project[ageStatP](

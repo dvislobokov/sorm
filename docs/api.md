@@ -348,6 +348,7 @@ sorm migrate up   -dialect D -dir DIR -dsn DSN
 ## Struct tags
 
 See the full [tag reference](guide/02-schema.md#tag-reference):
-`pk` · `auto` · `unique` · `version` · `col:` · `type:` · `fk:` ·
+`pk` · `auto` · `unique` · `version` · `autoCreate` · `autoUpdate` ·
+`col:` · `type:` · `fk:` ·
 `index[:name]` · `uniqueIndex[:name]` · `table:` · `-` ·
-`hasMany:` · `belongsTo:` · `hasOne:` · `many2many:`
+`hasMany:` · `belongsTo:` · `hasOne:` · `many2many:` · `json`

@@ -159,7 +159,7 @@ func TestSessionRemoveOrder(t *testing.T) {
 	pool := testPool(t)
 	ctx := context.Background()
 	seedAlice(t, pool)
-	mustExec(t, pool, `INSERT INTO posts (author_id, title, body, views) VALUES (1, 't', 'b', 0), (1, 't2', 'b2', 0)`)
+	mustExec(t, pool, `INSERT INTO posts (author_id, title, body, views, created_at, updated_at) VALUES (1, 't', 'b', 0, now(), now()), (1, 't2', 'b2', 0, now(), now())`)
 
 	s := sorm.NewSession(pool)
 	u, err := sorm.Track[models.User](s).
@@ -191,7 +191,7 @@ func TestSessionTrackedChildrenViaInclude(t *testing.T) {
 	pool := testPool(t)
 	ctx := context.Background()
 	seedAlice(t, pool)
-	mustExec(t, pool, `INSERT INTO posts (author_id, title, body, views) VALUES (1, 'old', 'b', 0)`)
+	mustExec(t, pool, `INSERT INTO posts (author_id, title, body, views, created_at, updated_at) VALUES (1, 'old', 'b', 0, now(), now())`)
 
 	s := sorm.NewSession(pool)
 	u, err := sorm.Track[models.User](s).

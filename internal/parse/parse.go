@@ -65,6 +65,11 @@ type Field struct {
 	Auto     bool
 	Unique   bool
 	Version  bool
+	// AutoCreate/AutoUpdate — auto-timestamps (plain time.Time only):
+	// autoCreate stamps on INSERT when zero, autoUpdate on INSERT and
+	// every effective UPDATE.
+	AutoCreate bool
+	AutoUpdate bool
 	FK       string // "User.ID" from the fk: tag, empty if absent
 	SQLType  string // column type override from the type: tag
 	// BasicKind — underlying type for the SQL mapping: "string","int64",...,
@@ -433,12 +438,17 @@ var jsonKeyRe = regexp.MustCompile(`^[A-Za-z0-9_]+$`)
 
 func parseColumn(fv *types.Var, opts tagOpts, qual types.Qualifier) (*Field, error) {
 	f := &Field{
-		GoName:  fv.Name(),
-		Col:     snake(fv.Name()),
-		PK:      opts.has("pk"),
-		Auto:    opts.has("auto"),
-		Unique:  opts.has("unique"),
-		Version: opts.has("version"),
+		GoName:     fv.Name(),
+		Col:        snake(fv.Name()),
+		PK:         opts.has("pk"),
+		Auto:       opts.has("auto"),
+		Unique:     opts.has("unique"),
+		Version:    opts.has("version"),
+		AutoCreate: opts.has("autoCreate"),
+		AutoUpdate: opts.has("autoUpdate"),
+	}
+	if f.AutoCreate && f.AutoUpdate {
+		return nil, fmt.Errorf("autoCreate and autoUpdate on one field are redundant — autoUpdate already stamps on insert")
 	}
 	if col, ok := opts.value("col"); ok {
 		f.Col = col
@@ -491,6 +501,9 @@ func parseColumn(fv *types.Var, opts tagOpts, qual types.Qualifier) (*Field, err
 		default:
 			return nil, fmt.Errorf("unsupported basic type %s", basic)
 		}
+	}
+	if (f.AutoCreate || f.AutoUpdate) && (!f.IsTime || f.Nullable) {
+		return nil, fmt.Errorf("autoCreate/autoUpdate requires a plain time.Time field")
 	}
 	return f, nil
 }

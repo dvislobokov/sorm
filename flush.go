@@ -6,6 +6,7 @@ import (
 	"reflect"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/dvislobokov/sorm/dialect"
 )
@@ -13,6 +14,9 @@ import (
 // flushPlan — the assembled write plan: statements and the insert dependency graph.
 type flushPlan struct {
 	d dialect.Dialect
+	// now — a single timestamp for the whole flush: every autoCreate/autoUpdate
+	// field stamped in this SaveChanges gets the same value.
+	now time.Time
 	// addedSet — all Added pointers of all types (for edge detection).
 	addedSet map[any]bool
 	deletes  []planStmt
@@ -45,6 +49,7 @@ type insertNode struct {
 func (s *Session) flush(ctx context.Context, db DB) (post func(), err error) {
 	p := &flushPlan{
 		d:         db.Dialect(),
+		now:       time.Now(),
 		addedSet:  map[any]bool{},
 		inserts:   map[any]*insertNode{},
 		tableRefs: map[string][]string{},
@@ -294,6 +299,12 @@ func (t *tracker[E]) buildPlan(p *flushPlan) error {
 		if len(idxs) == 0 {
 			continue
 		}
+		// autoUpdate stamps only effective updates: the diff is re-taken so the
+		// timestamp column joins the changed set.
+		if m.TouchUpdate != nil {
+			m.TouchUpdate(r.e, p.now)
+			idxs = m.Diff(r.snap, r.e)
+		}
 		t.planUpdate(p, r, idxs)
 	}
 
@@ -391,6 +402,13 @@ func (t *tracker[E]) planInsert(p *flushPlan, e *E) error {
 
 	if m.VersionCol != "" && m.GetVersion(e) == 0 {
 		m.SetVersion(e, 1)
+	}
+	// Auto-timestamps: created (unless set manually) and updated stamp on insert.
+	if m.TouchCreate != nil {
+		m.TouchCreate(e, p.now)
+	}
+	if m.TouchUpdate != nil {
+		m.TouchUpdate(e, p.now)
 	}
 
 	refs := m.Refs

@@ -90,6 +90,10 @@ type Post struct {
 	Body     string
 	Views    int        `sorm:"index"` // single-column idx_posts_views
 	Comments []*Comment `sorm:"hasMany:PostID"`
+	// Auto-timestamps: CreatedAt stamps on insert (manual value wins),
+	// UpdatedAt on insert and every effective update.
+	CreatedAt time.Time `sorm:"autoCreate"`
+	UpdatedAt time.Time `sorm:"autoUpdate"`
 }
 
 // Device exercises native uuid.UUID support: a client-assigned UUID PK

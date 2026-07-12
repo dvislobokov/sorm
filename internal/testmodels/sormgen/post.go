@@ -3,6 +3,8 @@
 package sormgen
 
 import (
+	"time"
+
 	"github.com/dvislobokov/sorm"
 
 	models "github.com/dvislobokov/sorm/internal/testmodels"
@@ -10,19 +12,23 @@ import (
 
 // Post holds typed column descriptors for models.Post.
 var Post = struct {
-	ID       sorm.OrdCol[models.Post, int64]
-	AuthorID sorm.OrdCol[models.Post, int64]
-	Title    sorm.StrCol[models.Post]
-	Body     sorm.StrCol[models.Post]
-	Views    sorm.OrdCol[models.Post, int]
-	Comments sorm.HasMany[models.Post, models.Comment]
-	Author   sorm.BelongsTo[models.Post, models.User]
+	ID        sorm.OrdCol[models.Post, int64]
+	AuthorID  sorm.OrdCol[models.Post, int64]
+	Title     sorm.StrCol[models.Post]
+	Body      sorm.StrCol[models.Post]
+	Views     sorm.OrdCol[models.Post, int]
+	CreatedAt sorm.OrdCol[models.Post, time.Time]
+	UpdatedAt sorm.OrdCol[models.Post, time.Time]
+	Comments  sorm.HasMany[models.Post, models.Comment]
+	Author    sorm.BelongsTo[models.Post, models.User]
 }{
-	ID:       sorm.NewOrdCol[models.Post, int64]("posts", "id"),
-	AuthorID: sorm.NewOrdCol[models.Post, int64]("posts", "author_id"),
-	Title:    sorm.NewStrCol[models.Post]("posts", "title"),
-	Body:     sorm.NewStrCol[models.Post]("posts", "body"),
-	Views:    sorm.NewOrdCol[models.Post, int]("posts", "views"),
+	ID:        sorm.NewOrdCol[models.Post, int64]("posts", "id"),
+	AuthorID:  sorm.NewOrdCol[models.Post, int64]("posts", "author_id"),
+	Title:     sorm.NewStrCol[models.Post]("posts", "title"),
+	Body:      sorm.NewStrCol[models.Post]("posts", "body"),
+	Views:     sorm.NewOrdCol[models.Post, int]("posts", "views"),
+	CreatedAt: sorm.NewOrdCol[models.Post, time.Time]("posts", "created_at"),
+	UpdatedAt: sorm.NewOrdCol[models.Post, time.Time]("posts", "updated_at"),
 	Comments: sorm.NewHasMany[models.Post, models.Comment](
 		"post_id",
 		func(e *models.Post) any { return e.ID },
@@ -43,10 +49,12 @@ var Post = struct {
 }
 
 type postSnap struct {
-	fAuthorID int64
-	fTitle    string
-	fBody     string
-	fViews    int
+	fAuthorID  int64
+	fTitle     string
+	fBody      string
+	fViews     int
+	fCreatedAt time.Time
+	fUpdatedAt time.Time
 }
 
 func init() {
@@ -62,6 +70,8 @@ var postTableDef = sorm.TableDef{
 		{Name: "title", GoKind: "string"},
 		{Name: "body", GoKind: "string"},
 		{Name: "views", GoKind: "int"},
+		{Name: "created_at", GoKind: "time"},
+		{Name: "updated_at", GoKind: "time"},
 	},
 	Indexes: []sorm.IndexDef{
 		{Name: "idx_posts_author_title", Columns: []string{"author_id", "title"}, Unique: false},
@@ -73,13 +83,13 @@ var postMeta = sorm.Meta[models.Post]{
 	Table:      "posts",
 	PK:         "id",
 	Auto:       true,
-	SelectCols: []string{"id", "author_id", "title", "body", "views"},
-	InsertCols: []string{"author_id", "title", "body", "views"},
+	SelectCols: []string{"id", "author_id", "title", "body", "views", "created_at", "updated_at"},
+	InsertCols: []string{"author_id", "title", "body", "views", "created_at", "updated_at"},
 	Scan: func(e *models.Post) []any {
-		return []any{&e.ID, &e.AuthorID, &e.Title, &e.Body, &e.Views}
+		return []any{&e.ID, &e.AuthorID, &e.Title, &e.Body, &e.Views, &e.CreatedAt, &e.UpdatedAt}
 	},
 	InsertValues: func(e *models.Post) []any {
-		return []any{e.AuthorID, e.Title, e.Body, e.Views}
+		return []any{e.AuthorID, e.Title, e.Body, e.Views, e.CreatedAt, e.UpdatedAt}
 	},
 	ValuesFor: func(e *models.Post, cols []int) []any {
 		out := make([]any, len(cols))
@@ -95,16 +105,22 @@ var postMeta = sorm.Meta[models.Post]{
 				out[i] = e.Body
 			case 4:
 				out[i] = e.Views
+			case 5:
+				out[i] = e.CreatedAt
+			case 6:
+				out[i] = e.UpdatedAt
 			}
 		}
 		return out
 	},
 	Snapshot: func(e *models.Post) any {
 		return postSnap{
-			fAuthorID: e.AuthorID,
-			fTitle:    e.Title,
-			fBody:     e.Body,
-			fViews:    e.Views,
+			fAuthorID:  e.AuthorID,
+			fTitle:     e.Title,
+			fBody:      e.Body,
+			fViews:     e.Views,
+			fCreatedAt: e.CreatedAt.Round(0),
+			fUpdatedAt: e.UpdatedAt.Round(0),
 		}
 	},
 	Diff: func(s any, e *models.Post) []int {
@@ -122,10 +138,24 @@ var postMeta = sorm.Meta[models.Post]{
 		if snap.fViews != e.Views {
 			ch = append(ch, 4)
 		}
+		if !snap.fCreatedAt.Equal(e.CreatedAt) {
+			ch = append(ch, 5)
+		}
+		if !snap.fUpdatedAt.Equal(e.UpdatedAt) {
+			ch = append(ch, 6)
+		}
 		return ch
 	},
 	SetPK:   func(e *models.Post, id int64) { e.ID = id },
 	PKValue: func(e *models.Post) any { return e.ID },
+	TouchCreate: func(e *models.Post, t time.Time) {
+		if e.CreatedAt.IsZero() {
+			e.CreatedAt = t
+		}
+	},
+	TouchUpdate: func(e *models.Post, t time.Time) {
+		e.UpdatedAt = t
+	},
 	Refs: []sorm.Ref[models.Post]{
 		{
 			FKCol:   "author_id",
