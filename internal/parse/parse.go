@@ -33,8 +33,20 @@ type Entity struct {
 	Table        string
 	Fields       []Field // только колонки, в порядке объявления
 	Relations    []Relation
-	PKIndex      int // индекс в Fields
-	VersionIndex int // -1 если нет
+	Indexes      []Index // из тегов index:/uniqueIndex: (композитные — по общему имени)
+	// HasIndexesMethod: у типа есть метод Indexes() []sorm.IndexDef —
+	// кастомные индексы (DESC, выражения, полнотекст, частичные);
+	// сгенерированный код объединит его с тегами.
+	HasIndexesMethod bool
+	PKIndex          int // индекс в Fields
+	VersionIndex     int // -1 если нет
+}
+
+// Index — индекс таблицы; колонки в порядке объявления полей.
+type Index struct {
+	Name   string
+	Cols   []string
+	Unique bool
 }
 
 func (e Entity) PK() Field { return e.Fields[e.PKIndex] }
@@ -59,11 +71,12 @@ type Field struct {
 }
 
 type Relation struct {
-	GoName  string
-	Kind    string // "hasMany" | "belongsTo" | "hasOne"
-	Target  string // имя сущности
-	FKField string // Go-имя FK-поля
-	Slice   bool
+	GoName    string
+	Kind      string // "hasMany" | "belongsTo" | "hasOne" | "many2many"
+	Target    string // имя сущности
+	FKField   string // Go-имя FK-поля (не для many2many)
+	JoinTable string // только many2many
+	Slice     bool
 }
 
 // Load разбирает пакет моделей в dir.
@@ -102,7 +115,8 @@ func Load(dir string) (*Schema, error) {
 	}
 
 	for _, name := range names {
-		st := structOf(scope.Lookup(name))
+		obj := scope.Lookup(name)
+		st := structOf(obj)
 		if st == nil || !hasPKTag(st) {
 			continue
 		}
@@ -110,6 +124,7 @@ func Load(dir string) (*Schema, error) {
 		if err != nil {
 			return nil, fmt.Errorf("%s.%s: %w", pkg.Name, name, err)
 		}
+		ent.HasIndexesMethod = hasIndexesMethod(obj)
 		s.Entities = append(s.Entities, *ent)
 	}
 
@@ -133,6 +148,26 @@ func structOf(obj types.Object) *types.Struct {
 		return nil
 	}
 	return st
+}
+
+// hasIndexesMethod — есть ли у типа метод Indexes() []sorm.IndexDef.
+func hasIndexesMethod(obj types.Object) bool {
+	named, ok := obj.(*types.TypeName).Type().(*types.Named)
+	if !ok {
+		return false
+	}
+	for i := 0; i < named.NumMethods(); i++ {
+		m := named.Method(i)
+		if m.Name() != "Indexes" {
+			continue
+		}
+		sig, ok := m.Type().(*types.Signature)
+		if !ok || sig.Params().Len() != 0 || sig.Results().Len() != 1 {
+			return false
+		}
+		return strings.HasSuffix(sig.Results().At(0).Type().String(), "sorm.IndexDef")
+	}
+	return false
 }
 
 func hasPKTag(st *types.Struct) bool {
@@ -203,6 +238,9 @@ func parseEntity(name string, st *types.Struct, modelsPkg *types.Package, entity
 	if ent.PKIndex < 0 {
 		return nil, fmt.Errorf("no pk field")
 	}
+	if err := collectIndexes(ent, st); err != nil {
+		return nil, err
+	}
 	if pk := ent.PK(); pk.Auto && !isIntExpr(pk.TypeExpr) {
 		return nil, fmt.Errorf("field %s: auto pk must be an integer type", pk.GoName)
 	}
@@ -220,6 +258,9 @@ func parseRelation(fv *types.Var, opts tagOpts, modelsPkg *types.Package, entity
 		if fk, ok := opts.value(kind); ok {
 			return &Relation{GoName: fv.Name(), Kind: kind, Target: target, FKField: fk, Slice: slice}, true
 		}
+	}
+	if jt, ok := opts.value("many2many"); ok {
+		return &Relation{GoName: fv.Name(), Kind: "many2many", Target: target, JoinTable: jt, Slice: slice}, true
 	}
 	return nil, true // тип навигационный, тега нет — ошибка выше
 }
@@ -313,6 +354,15 @@ func validateRelations(s *Schema) error {
 	}
 	for _, e := range s.Entities {
 		for _, r := range e.Relations {
+			if r.Kind == "many2many" {
+				if r.JoinTable == "" {
+					return fmt.Errorf("%s.%s: many2many требует имя join-таблицы", e.Name, r.GoName)
+				}
+				if !r.Slice {
+					return fmt.Errorf("%s.%s: many2many должно быть слайсом", e.Name, r.GoName)
+				}
+				continue
+			}
 			// FK-поле живёт на стороне «многих»: у target для hasMany, у себя для belongsTo/hasOne-владельца.
 			owner := byName[r.Target]
 			if r.Kind == "belongsTo" {
@@ -327,6 +377,58 @@ func validateRelations(s *Schema) error {
 					e.Name, r.GoName, r.Kind, r.FKField, owner.Name)
 			}
 		}
+	}
+	return nil
+}
+
+// collectIndexes собирает индексы из тегов `index[:name]` и
+// `uniqueIndex[:name]`: поля с одним именем образуют композитный индекс
+// в порядке объявления; без имени — одноколоночный idx_<table>_<col>.
+func collectIndexes(ent *Entity, st *types.Struct) error {
+	byName := map[string]*Index{}
+	fieldPos := 0
+	for i := 0; i < st.NumFields(); i++ {
+		fv := st.Field(i)
+		if !fv.Exported() {
+			continue
+		}
+		opts := tagOptions(st.Tag(i))
+		if opts.has("-") {
+			continue
+		}
+		// колонка ли это поле (навигации пропускаем): сверяем по позиции в Fields
+		if fieldPos >= len(ent.Fields) || ent.Fields[fieldPos].GoName != fv.Name() {
+			continue
+		}
+		col := ent.Fields[fieldPos].Col
+		fieldPos++
+
+		for _, kind := range []struct {
+			opt    string
+			unique bool
+		}{{"index", false}, {"uniqueIndex", true}} {
+			name, hasVal := opts.value(kind.opt)
+			if !hasVal && !opts.has(kind.opt) {
+				continue
+			}
+			if name == "" {
+				name = "idx_" + ent.Table + "_" + col
+			}
+			if ix, ok := byName[name]; ok {
+				if ix.Unique != kind.unique {
+					return fmt.Errorf("index %q: смешаны index и uniqueIndex", name)
+				}
+				ix.Cols = append(ix.Cols, col)
+				continue
+			}
+			ix := &Index{Name: name, Cols: []string{col}, Unique: kind.unique}
+			byName[name] = ix
+			ent.Indexes = append(ent.Indexes, Index{Name: name}) // позиция; содержимое ниже
+		}
+	}
+	// композитные индексы дособрались в byName — материализуем в порядке появления
+	for i := range ent.Indexes {
+		ent.Indexes[i] = *byName[ent.Indexes[i].Name]
 	}
 	return nil
 }
@@ -413,6 +515,9 @@ func (o tagOpts) value(name string) (string, bool) {
 }
 
 // --- имена ---
+
+// Snake — экспорт snake_case для генераторов (имена колонок join-таблиц).
+func Snake(s string) string { return snake(s) }
 
 func snake(s string) string {
 	var b strings.Builder

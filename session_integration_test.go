@@ -32,6 +32,8 @@ func testPool(t *testing.T) sorm.DB {
 
 	ctx := context.Background()
 	stmts := append([]string{
+		`DROP TABLE IF EXISTS user_tags`,
+		`DROP TABLE IF EXISTS tags`,
 		`DROP TABLE IF EXISTS api_keys`,
 		`DROP TABLE IF EXISTS posts`,
 		`DROP TABLE IF EXISTS users`,
@@ -154,7 +156,7 @@ func TestSessionRemoveOrder(t *testing.T) {
 	pool := testPool(t)
 	ctx := context.Background()
 	seedAlice(t, pool)
-	mustExec(t, pool, `INSERT INTO posts (author_id, title, body) VALUES (1, 't', 'b'), (1, 't2', 'b2')`)
+	mustExec(t, pool, `INSERT INTO posts (author_id, title, body, views) VALUES (1, 't', 'b', 0), (1, 't2', 'b2', 0)`)
 
 	s := sorm.NewSession(pool)
 	u, err := sorm.Track[models.User](s).
@@ -186,7 +188,7 @@ func TestSessionTrackedChildrenViaInclude(t *testing.T) {
 	pool := testPool(t)
 	ctx := context.Background()
 	seedAlice(t, pool)
-	mustExec(t, pool, `INSERT INTO posts (author_id, title, body) VALUES (1, 'old', 'b')`)
+	mustExec(t, pool, `INSERT INTO posts (author_id, title, body, views) VALUES (1, 'old', 'b', 0)`)
 
 	s := sorm.NewSession(pool)
 	u, err := sorm.Track[models.User](s).

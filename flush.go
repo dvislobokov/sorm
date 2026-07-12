@@ -30,11 +30,15 @@ type planStmt struct {
 }
 
 type insertNode struct {
-	seq   int
-	table string
-	deps  []any // указатели на Added-родителей
-	// make вызывается после вставки родителей: FK-fixup внутри.
-	make func() BatchItem
+	seq        int
+	table      string
+	deps       []any // указатели на Added-родителей
+	auto       bool
+	pkCol      string
+	insertCols []string
+	// values вызывается после вставки родителей: FK-fixup внутри.
+	values func() []any
+	setPK  func(int64)
 }
 
 func (s *Session) flush(ctx context.Context, db DB) (post func(), err error) {
@@ -89,10 +93,8 @@ func (s *Session) flush(ctx context.Context, db DB) (post func(), err error) {
 		}
 		sort.Slice(level, func(i, j int) bool { return level[i].seq < level[j].seq })
 
-		items := make([]BatchItem, len(level))
-		for i, n := range level {
-			items[i] = n.make() // make-время: родители предыдущих уровней уже имеют PK
-		}
+		// values-время: родители предыдущих уровней уже имеют PK (fixup внутри).
+		items := groupInserts(p.d, level)
 		if err := db.ExecBatch(ctx, items); err != nil {
 			return nil, err
 		}
@@ -110,6 +112,87 @@ func (s *Session) flush(ctx context.Context, db DB) (post func(), err error) {
 			f()
 		}
 	}, nil
+}
+
+// maxInsertRows / maxInsertArgs — пределы multi-row INSERT: строк на
+// статимент и плейсхолдеров (PG ограничен 65535 параметрами).
+const (
+	maxInsertRows = 500
+	maxInsertArgs = 30000
+)
+
+// groupInserts склеивает вставки одного уровня в multi-row INSERT'ы:
+// подряд идущие узлы одной таблицы → INSERT ... VALUES (...),(...),...
+func groupInserts(d dialect.Dialect, level []*insertNode) []BatchItem {
+	var items []BatchItem
+	for start := 0; start < len(level); {
+		n := level[start]
+		rowCap := maxInsertRows
+		if len(n.insertCols) > 0 {
+			if byArgs := maxInsertArgs / len(n.insertCols); byArgs < rowCap {
+				rowCap = byArgs
+			}
+		}
+		end := start + 1
+		for end < len(level) && end-start < rowCap && level[end].table == n.table {
+			end++
+		}
+		group := level[start:end]
+		items = append(items, buildInsertItem(d, group))
+		start = end
+	}
+	return items
+}
+
+func buildInsertItem(d dialect.Dialect, group []*insertNode) BatchItem {
+	first := group[0]
+	args := make([]any, 0, len(group)*len(first.insertCols))
+	for _, n := range group {
+		args = append(args, n.values()...)
+	}
+	item := BatchItem{
+		SQL:  multiInsertSQL(d, first, len(group)),
+		Args: args,
+	}
+	if first.auto {
+		item.IDCount = len(group)
+		item.OnIDs = func(ids []int64) {
+			for i, n := range group {
+				n.setPK(ids[i])
+			}
+		}
+	}
+	return item
+}
+
+func multiInsertSQL(d dialect.Dialect, n *insertNode, rows int) string {
+	sql := "INSERT INTO " + d.QuoteIdent(n.table) + " ("
+	for i, c := range n.insertCols {
+		if i > 0 {
+			sql += ", "
+		}
+		sql += d.QuoteIdent(c)
+	}
+	sql += ") VALUES "
+	arg := 0
+	for r := 0; r < rows; r++ {
+		if r > 0 {
+			sql += ", "
+		}
+		sql += "("
+		for i := range n.insertCols {
+			if i > 0 {
+				sql += ", "
+			}
+			arg++
+			sql += d.Placeholder(arg)
+		}
+		sql += ")"
+	}
+	if n.auto && d.ReturningSupported() {
+		sql += " RETURNING " + d.QuoteIdent(n.pkCol)
+	}
+	return sql
 }
 
 func storesSorted(s *Session) []anyStore {
@@ -291,27 +374,25 @@ func (t *tracker[E]) planInsert(p *flushPlan, e *E) error {
 		m.SetVersion(e, 1)
 	}
 
-	sql := t.insertSQL(p.d)
 	refs := m.Refs
 	p.seq++
 	p.inserts[any(e)] = &insertNode{
-		seq:   p.seq,
-		table: m.Table,
-		deps:  deps,
-		make: func() BatchItem {
-			// make-время: родители вставлены → FK-fixup по навигациям.
+		seq:        p.seq,
+		table:      m.Table,
+		deps:       deps,
+		auto:       m.Auto,
+		pkCol:      m.PK,
+		insertCols: m.InsertCols,
+		values: func() []any {
+			// values-время: родители вставлены → FK-fixup по навигациям.
 			for _, ref := range refs {
 				if nav := ref.Nav(e); nav != nil {
 					ref.SetFK(e, ref.NavPK(e))
 				}
 			}
-			item := BatchItem{SQL: sql, Args: m.InsertValues(e)}
-			if m.Auto {
-				item.WantID = true
-				item.OnID = func(id int64) { m.SetPK(e, id) }
-			}
-			return item
+			return m.InsertValues(e)
 		},
+		setPK: func(id int64) { m.SetPK(e, id) },
 	}
 
 	p.post = append(p.post, func() {
@@ -322,29 +403,6 @@ func (t *tracker[E]) planInsert(p *flushPlan, e *E) error {
 		t.trackOrder = append(t.trackOrder, r)
 	})
 	return nil
-}
-
-func (t *tracker[E]) insertSQL(d dialect.Dialect) string {
-	m := t.meta
-	sql := "INSERT INTO " + d.QuoteIdent(m.Table) + " ("
-	for i, c := range m.InsertCols {
-		if i > 0 {
-			sql += ", "
-		}
-		sql += d.QuoteIdent(c)
-	}
-	sql += ") VALUES ("
-	for i := range m.InsertCols {
-		if i > 0 {
-			sql += ", "
-		}
-		sql += d.Placeholder(i + 1)
-	}
-	sql += ")"
-	if m.Auto && d.ReturningSupported() {
-		sql += " RETURNING " + d.QuoteIdent(m.PK)
-	}
-	return sql
 }
 
 func expectOneRow(table string, pk any) func(int64) error {

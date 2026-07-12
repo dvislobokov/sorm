@@ -153,6 +153,18 @@ func registerModels(modelsDir string) error {
 		if err != nil {
 			return err
 		}
+		if e.HasIndexesMethod {
+			fmt.Fprintf(os.Stderr,
+				"sorm: ВНИМАНИЕ: %s определяет кастомные Indexes() — CLI не исполняет код моделей и не увидит их.\n"+
+					"       Для полной схемы используйте sorm/migrate из кода (Diff/Apply с импортом sormgen).\n", e.Name)
+		}
+		sorm.RegisterTable(def)
+	}
+	joins, err := ddl.JoinTableDefs(schema)
+	if err != nil {
+		return err
+	}
+	for _, def := range joins {
 		sorm.RegisterTable(def)
 	}
 	return nil

@@ -66,16 +66,16 @@ func TestVersionedFullCycle(t *testing.T) {
 
 	// 5. Эволюция схемы: эмулируем добавление таблицы в модели.
 	sorm.RegisterTable(sorm.TableDef{
-		Name: "tags",
+		Name: "labels",
 		Columns: []sorm.ColumnDef{
 			{Name: "id", GoKind: "int64", PK: true, Auto: true},
-			{Name: "label", GoKind: "string", Unique: true},
+			{Name: "title", GoKind: "string", Unique: true},
 		},
 	})
-	t.Cleanup(func() { sorm.UnregisterTable("tags") })
+	t.Cleanup(func() { sorm.UnregisterTable("labels") })
 
 	dev3 := sqliteDB(t)
-	fname3, err := migrate.Diff(ctx, dev3, "sqlite", dir, "add tags")
+	fname3, err := migrate.Diff(ctx, dev3, "sqlite", dir, "add labels")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -83,8 +83,8 @@ func TestVersionedFullCycle(t *testing.T) {
 		t.Fatal("дифф не увидел новую таблицу")
 	}
 	content3, _ := os.ReadFile(filepath.Join(dir, fname3))
-	if !strings.Contains(string(content3), "tags") || strings.Contains(string(content3), "users") {
-		t.Fatalf("вторая миграция должна содержать только tags:\n%s", content3)
+	if !strings.Contains(string(content3), "labels") || strings.Contains(string(content3), "users") {
+		t.Fatalf("вторая миграция должна содержать только labels:\n%s", content3)
 	}
 
 	// 6. Pending видит новый файл; Up доводит целевую БД.
@@ -95,8 +95,8 @@ func TestVersionedFullCycle(t *testing.T) {
 	if applied, err := migrate.Up(ctx, target, "sqlite", dir); err != nil || len(applied) != 1 {
 		t.Fatalf("up: %v %v", applied, err)
 	}
-	if _, err := target.Exec(`INSERT INTO tags (label) VALUES ('go')`); err != nil {
-		t.Fatalf("таблица tags не создана: %v", err)
+	if _, err := target.Exec(`INSERT INTO labels (title) VALUES ('go')`); err != nil {
+		t.Fatalf("таблица labels не создана: %v", err)
 	}
 }
 

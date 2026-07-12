@@ -26,6 +26,7 @@ var User = struct {
 	DeletedAt sorm.OrdCol[models.User, time.Time]
 	Version   sorm.OrdCol[models.User, int64]
 	Posts     sorm.HasMany[models.User, models.Post]
+	Tags      sorm.ManyToMany[models.User, models.Tag]
 }{
 	ID:        sorm.NewOrdCol[models.User, int64]("users", "id"),
 	Email:     sorm.NewStrCol[models.User]("users", "email"),
@@ -44,6 +45,11 @@ var User = struct {
 		func(c *models.Post) any { return c.AuthorID },
 		func(e *models.User) { e.Posts = []*models.Post{} },
 		func(e *models.User, c *models.Post) { e.Posts = append(e.Posts, c) },
+	),
+	Tags: sorm.NewManyToMany[models.User, models.Tag](
+		"user_tags", "user_id", "tag_id",
+		func(e *models.User) { e.Tags = []*models.Tag{} },
+		func(e *models.User, c *models.Tag) { e.Tags = append(e.Tags, c) },
 	),
 }
 
@@ -79,6 +85,7 @@ var userTableDef = sorm.TableDef{
 		{Name: "deleted_at", GoKind: "time", Nullable: true},
 		{Name: "version", GoKind: "int64"},
 	},
+	Indexes: append([]sorm.IndexDef{}, models.User{}.Indexes()...),
 }
 
 var userMeta = sorm.Meta[models.User]{

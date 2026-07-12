@@ -57,24 +57,24 @@ func (d db) Exec(ctx context.Context, query string, args ...any) (int64, error) 
 
 func (d db) ExecBatch(ctx context.Context, items []sorm.BatchItem) error {
 	for _, it := range items {
-		if it.WantID {
+		if it.IDCount > 0 {
 			if d.d.ReturningSupported() {
-				var id int64
-				if err := d.q.QueryRowContext(ctx, it.SQL, it.Args...).Scan(&id); err != nil {
+				ids, err := d.queryIDs(ctx, it)
+				if err != nil {
 					return d.translate(err)
 				}
-				it.OnID(id)
+				it.OnIDs(ids)
 				continue
 			}
 			res, err := d.q.ExecContext(ctx, it.SQL, it.Args...)
 			if err != nil {
 				return d.translate(err)
 			}
-			id, err := res.LastInsertId()
+			ids, err := idsFromLastInsert(d.d.Name(), res, it.IDCount)
 			if err != nil {
-				return fmt.Errorf("sqld: LastInsertId: %w", err)
+				return err
 			}
-			it.OnID(id)
+			it.OnIDs(ids)
 			continue
 		}
 		res, err := d.q.ExecContext(ctx, it.SQL, it.Args...)
@@ -103,6 +103,51 @@ func (d db) Begin(ctx context.Context) (sorm.Tx, error) {
 		return nil, fmt.Errorf("sqld: begin: %w", err)
 	}
 	return tx{db: db{q: stx, d: d.d}, t: stx}, nil
+}
+
+func (d db) queryIDs(ctx context.Context, it sorm.BatchItem) ([]int64, error) {
+	rows, err := d.q.QueryContext(ctx, it.SQL, it.Args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	ids := make([]int64, 0, it.IDCount)
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if len(ids) != it.IDCount {
+		return nil, fmt.Errorf("sqld: RETURNING вернул %d id, ожидали %d", len(ids), it.IDCount)
+	}
+	return ids, nil
+}
+
+// idsFromLastInsert восстанавливает id строк multi-row INSERT'а из
+// LastInsertId: MySQL возвращает ПЕРВЫЙ id батча (id идут по возрастанию
+// при auto_increment_increment=1), SQLite — ПОСЛЕДНИЙ rowid.
+func idsFromLastInsert(dialect string, res sql.Result, n int) ([]int64, error) {
+	last, err := res.LastInsertId()
+	if err != nil {
+		return nil, fmt.Errorf("sqld: LastInsertId: %w", err)
+	}
+	if affected, err := res.RowsAffected(); err == nil && affected != int64(n) {
+		return nil, fmt.Errorf("sqld: multi-insert затронул %d строк, ожидали %d", affected, n)
+	}
+	ids := make([]int64, n)
+	first := last
+	if dialect == "sqlite" {
+		first = last - int64(n) + 1
+	}
+	for i := range ids {
+		ids[i] = first + int64(i)
+	}
+	return ids, nil
 }
 
 // translate конвертирует ошибки констрейнтов MySQL/SQLite в типизированный

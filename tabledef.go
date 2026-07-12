@@ -12,7 +12,50 @@ import (
 type TableDef struct {
 	Name    string
 	Columns []ColumnDef
+	Indexes []IndexDef
 }
+
+// IndexDef — индекс таблицы. Простые (в т.ч. композитные) индексы задаются
+// тегами `index:`/`uniqueIndex:`; кастомные — опциональным методом модели:
+//
+//	func (Post) Indexes() []sorm.IndexDef {
+//	    return []sorm.IndexDef{
+//	        {Name: "idx_posts_fts", Type: "gin",
+//	         Parts: []sorm.IndexPart{{Expr: "to_tsvector('russian', title)"}}},
+//	        {Name: "idx_posts_recent",
+//	         Parts: []sorm.IndexPart{{Column: "created_at", Desc: true}},
+//	         Where: "views > 0"},
+//	    }
+//	}
+//
+// `sorm gen` объединяет теги и метод в TableDef.
+type IndexDef struct {
+	Name    string
+	Columns []string    // простые ASC-колонки (эквивалент Parts без Desc/Expr)
+	Parts   []IndexPart // расширенный вариант: порядок сортировки и выражения
+	Unique  bool
+	Type    string // тип индекса: "gin"/"brin" (PG, USING), "fulltext" (MySQL)
+	Where   string // частичный индекс (PG, SQLite); сырое SQL-условие
+}
+
+// IndexPart — элемент индекса: колонка или выражение.
+type IndexPart struct {
+	Column string // имя колонки (взаимоисключимо с Expr)
+	Expr   string // сырое выражение: to_tsvector(...), lower(email), ...
+	Desc   bool
+}
+
+// parts нормализует Columns+Parts в единый список.
+func (ix IndexDef) parts() []IndexPart {
+	out := make([]IndexPart, 0, len(ix.Columns)+len(ix.Parts))
+	for _, c := range ix.Columns {
+		out = append(out, IndexPart{Column: c})
+	}
+	return append(out, ix.Parts...)
+}
+
+// IndexParts — нормализованный список элементов индекса (для генераторов).
+func (ix IndexDef) IndexParts() []IndexPart { return ix.parts() }
 
 // ColumnDef — описание колонки.
 type ColumnDef struct {

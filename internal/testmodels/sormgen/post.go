@@ -14,12 +14,14 @@ var Post = struct {
 	AuthorID sorm.OrdCol[models.Post, int64]
 	Title    sorm.StrCol[models.Post]
 	Body     sorm.StrCol[models.Post]
+	Views    sorm.OrdCol[models.Post, int]
 	Author   sorm.BelongsTo[models.Post, models.User]
 }{
 	ID:       sorm.NewOrdCol[models.Post, int64]("posts", "id"),
 	AuthorID: sorm.NewOrdCol[models.Post, int64]("posts", "author_id"),
 	Title:    sorm.NewStrCol[models.Post]("posts", "title"),
 	Body:     sorm.NewStrCol[models.Post]("posts", "body"),
+	Views:    sorm.NewOrdCol[models.Post, int]("posts", "views"),
 	Author: sorm.NewBelongsTo[models.Post, models.User](
 		"author_id",
 		func(c *models.Post) any { return c.AuthorID },
@@ -31,6 +33,7 @@ type postSnap struct {
 	fAuthorID int64
 	fTitle    string
 	fBody     string
+	fViews    int
 }
 
 func init() {
@@ -45,6 +48,11 @@ var postTableDef = sorm.TableDef{
 		{Name: "author_id", GoKind: "int64", RefTable: "users", RefCol: "id"},
 		{Name: "title", GoKind: "string"},
 		{Name: "body", GoKind: "string"},
+		{Name: "views", GoKind: "int"},
+	},
+	Indexes: []sorm.IndexDef{
+		{Name: "idx_posts_author_title", Columns: []string{"author_id", "title"}, Unique: false},
+		{Name: "idx_posts_views", Columns: []string{"views"}, Unique: false},
 	},
 }
 
@@ -52,13 +60,13 @@ var postMeta = sorm.Meta[models.Post]{
 	Table:      "posts",
 	PK:         "id",
 	Auto:       true,
-	SelectCols: []string{"id", "author_id", "title", "body"},
-	InsertCols: []string{"author_id", "title", "body"},
+	SelectCols: []string{"id", "author_id", "title", "body", "views"},
+	InsertCols: []string{"author_id", "title", "body", "views"},
 	Scan: func(e *models.Post) []any {
-		return []any{&e.ID, &e.AuthorID, &e.Title, &e.Body}
+		return []any{&e.ID, &e.AuthorID, &e.Title, &e.Body, &e.Views}
 	},
 	InsertValues: func(e *models.Post) []any {
-		return []any{e.AuthorID, e.Title, e.Body}
+		return []any{e.AuthorID, e.Title, e.Body, e.Views}
 	},
 	ValuesFor: func(e *models.Post, cols []int) []any {
 		out := make([]any, len(cols))
@@ -72,6 +80,8 @@ var postMeta = sorm.Meta[models.Post]{
 				out[i] = e.Title
 			case 3:
 				out[i] = e.Body
+			case 4:
+				out[i] = e.Views
 			}
 		}
 		return out
@@ -81,6 +91,7 @@ var postMeta = sorm.Meta[models.Post]{
 			fAuthorID: e.AuthorID,
 			fTitle:    e.Title,
 			fBody:     e.Body,
+			fViews:    e.Views,
 		}
 	},
 	Diff: func(s any, e *models.Post) []int {
@@ -94,6 +105,9 @@ var postMeta = sorm.Meta[models.Post]{
 		}
 		if snap.fBody != e.Body {
 			ch = append(ch, 3)
+		}
+		if snap.fViews != e.Views {
+			ch = append(ch, 4)
 		}
 		return ch
 	},

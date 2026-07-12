@@ -5,6 +5,22 @@ import (
 	"fmt"
 )
 
+// inChunkSize — предел ключей в одном WHERE ... IN (...) при eager loading:
+// десятки тысяч родителей не упрутся в лимиты плейсхолдеров БД.
+const inChunkSize = 1000
+
+func chunked(keys []any) [][]any {
+	if len(keys) <= inChunkSize {
+		return [][]any{keys}
+	}
+	var out [][]any
+	for start := 0; start < len(keys); start += inChunkSize {
+		end := min(start+inChunkSize, len(keys))
+		out = append(out, keys[start:end])
+	}
+	return out
+}
+
 // HasMany — дескриптор связи «один ко многим». Знает оба типа, поэтому всё
 // «двухтиповое» (Include, Any) — его методы: методы билдера не могут вводить
 // новые type parameters.
@@ -70,17 +86,19 @@ func (r HasMany[E, C]) Include(preds ...Pred[C]) IncludeSpec[E] {
 			r.initSlice(p) // загруженная пустая связь = пустой слайс, не nil
 		}
 
-		cq := Query[C](db).
-			Where(pred[C](inNode{colRef{name: r.fkCol}, keys, false})).
-			Where(preds...)
-		cq.sess = sess // Track трекает и детей
-		children, err := cq.All(ctx)
-		if err != nil {
-			return fmt.Errorf("include: %w", err)
-		}
-		for _, c := range children {
-			for _, p := range byKey[r.childKey(c)] {
-				r.appendChild(p, c)
+		for _, chunk := range chunked(keys) {
+			cq := Query[C](db).
+				Where(pred[C](inNode{colRef{name: r.fkCol}, chunk, false})).
+				Where(preds...)
+			cq.sess = sess // Track трекает и детей
+			children, err := cq.All(ctx)
+			if err != nil {
+				return fmt.Errorf("include: %w", err)
+			}
+			for _, c := range children {
+				for _, p := range byKey[r.childKey(c)] {
+					r.appendChild(p, c)
+				}
 			}
 		}
 		return nil
@@ -146,17 +164,19 @@ func (r BelongsTo[C, P]) Include(preds ...Pred[P]) IncludeSpec[C] {
 			return nil
 		}
 
-		pq := Query[P](db).
-			Where(pred[P](inNode{colRef{name: pm.PK}, keys, false})).
-			Where(preds...)
-		pq.sess = sess // Track трекает и родителей
-		parents, err := pq.All(ctx)
-		if err != nil {
-			return fmt.Errorf("include: %w", err)
-		}
-		byPK := make(map[any]*P, len(parents))
-		for _, p := range parents {
-			byPK[pm.PKValue(p)] = p
+		byPK := map[any]*P{}
+		for _, chunk := range chunked(keys) {
+			pq := Query[P](db).
+				Where(pred[P](inNode{colRef{name: pm.PK}, chunk, false})).
+				Where(preds...)
+			pq.sess = sess // Track трекает и родителей
+			parents, err := pq.All(ctx)
+			if err != nil {
+				return fmt.Errorf("include: %w", err)
+			}
+			for _, p := range parents {
+				byPK[pm.PKValue(p)] = p
+			}
 		}
 		for _, c := range children {
 			if p, ok := byPK[r.childFK(c)]; ok {

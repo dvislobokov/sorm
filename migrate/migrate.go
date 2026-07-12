@@ -121,6 +121,7 @@ func buildSchema(name string, defs []sorm.TableDef, dialect string) (*schema.Sch
 	// Первый проход: таблицы и колонки.
 	for _, def := range defs {
 		t := schema.NewTable(def.Name)
+		var pkCols []*schema.Column
 		for _, c := range def.Columns {
 			col, err := buildColumn(c, dialect)
 			if err != nil {
@@ -128,11 +129,21 @@ func buildSchema(name string, defs []sorm.TableDef, dialect string) (*schema.Sch
 			}
 			t.AddColumns(col)
 			if c.PK {
-				t.SetPrimaryKey(schema.NewPrimaryKey(col))
+				pkCols = append(pkCols, col) // композитный PK поддержан
 			}
 			if c.Unique {
 				t.AddIndexes(schema.NewUniqueIndex(def.Name + "_" + c.Name + "_key").AddColumns(col))
 			}
+		}
+		if len(pkCols) > 0 {
+			t.SetPrimaryKey(schema.NewPrimaryKey(pkCols...))
+		}
+		for _, ix := range def.Indexes {
+			sx, err := buildIndex(t, def.Name, ix, dialect)
+			if err != nil {
+				return nil, err
+			}
+			t.AddIndexes(sx)
 		}
 		tables[def.Name] = t
 		s.AddTables(t)
@@ -163,6 +174,50 @@ func buildSchema(name string, defs []sorm.TableDef, dialect string) (*schema.Sch
 		}
 	}
 	return s, nil
+}
+
+func buildIndex(t *schema.Table, table string, ix sorm.IndexDef, dialect string) (*schema.Index, error) {
+	var sx *schema.Index
+	if ix.Unique {
+		sx = schema.NewUniqueIndex(ix.Name)
+	} else {
+		sx = schema.NewIndex(ix.Name)
+	}
+	for _, part := range ix.IndexParts() {
+		var p *schema.IndexPart
+		switch {
+		case part.Expr != "":
+			p = schema.NewExprPart(&schema.RawExpr{X: part.Expr})
+		default:
+			col, ok := columnOf(t, part.Column)
+			if !ok {
+				return nil, fmt.Errorf("sorm/migrate: index %s: unknown column %s.%s", ix.Name, table, part.Column)
+			}
+			p = schema.NewColumnPart(col)
+		}
+		sx.AddParts(p.SetDesc(part.Desc))
+	}
+	if ix.Type != "" {
+		switch dialect {
+		case "postgres":
+			sx.AddAttrs(&postgres.IndexType{T: strings.ToUpper(ix.Type)})
+		case "mysql":
+			sx.AddAttrs(&mysql.IndexType{T: strings.ToUpper(ix.Type)})
+		default:
+			return nil, fmt.Errorf("sorm/migrate: index %s: тип индекса не поддерживается на %s", ix.Name, dialect)
+		}
+	}
+	if ix.Where != "" {
+		switch dialect {
+		case "postgres":
+			sx.AddAttrs(&postgres.IndexPredicate{P: ix.Where})
+		case "sqlite":
+			sx.AddAttrs(&sqlite.IndexPredicate{P: ix.Where})
+		default:
+			return nil, fmt.Errorf("sorm/migrate: index %s: частичные индексы не поддерживаются на %s", ix.Name, dialect)
+		}
+	}
+	return sx, nil
 }
 
 func columnOf(t *schema.Table, name string) (*schema.Column, bool) {

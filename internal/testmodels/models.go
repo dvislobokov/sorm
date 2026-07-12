@@ -5,7 +5,11 @@ package testmodels
 
 //go:generate go run sorm/cmd/sorm gen .
 
-import "time"
+import (
+	"time"
+
+	"sorm"
+)
 
 type User struct {
 	ID        int64   `sorm:"pk,auto"`
@@ -20,6 +24,24 @@ type User struct {
 	DeletedAt *time.Time
 	Version   int64   `sorm:"version"`
 	Posts     []*Post `sorm:"hasMany:AuthorID"`
+	Tags      []*Tag  `sorm:"many2many:user_tags"`
+}
+
+// Tag — сторона many2many (join-таблица user_tags генерируется неявно).
+type Tag struct {
+	ID    int64  `sorm:"pk,auto"`
+	Label string `sorm:"unique"`
+}
+
+// Indexes — кастомные индексы, невыразимые тегами (DESC-сортировка;
+// так же задаются выражения, WHERE и типы вроде gin/fulltext).
+func (User) Indexes() []sorm.IndexDef {
+	return []sorm.IndexDef{
+		{Name: "idx_users_created_desc", Parts: []sorm.IndexPart{
+			{Column: "created_at", Desc: true},
+			{Column: "id"},
+		}},
+	}
 }
 
 // ApiKey — сущность со строковым (UUID) PK, назначаемым клиентом:
@@ -33,8 +55,9 @@ type ApiKey struct {
 
 type Post struct {
 	ID       int64  `sorm:"pk,auto"`
-	AuthorID int64  `sorm:"fk:User.ID"`
+	AuthorID int64  `sorm:"fk:User.ID,index:idx_posts_author_title"`
 	Author   *User  `sorm:"belongsTo:AuthorID"`
-	Title    string
+	Title    string `sorm:"index:idx_posts_author_title"` // композитный (author_id, title)
 	Body     string
+	Views    int    `sorm:"index"` // одноколоночный idx_posts_views
 }

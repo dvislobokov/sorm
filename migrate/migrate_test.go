@@ -93,11 +93,32 @@ func TestPlanDetectsDrift(t *testing.T) {
 	}
 }
 
-func TestApplyPostgres(t *testing.T) {
+// pgDSN — отдельная база для migrate-тестов: пакеты sorm и sorm/migrate
+// гоняются go test'ом параллельно и не должны делить одну БД.
+func pgDSN(t *testing.T) string {
+	t.Helper()
 	dsn := os.Getenv("SORM_TEST_DSN")
 	if dsn == "" {
 		t.Skip("SORM_TEST_DSN не задан")
 	}
+	admin, err := sql.Open("pgx", dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer admin.Close()
+	_, _ = admin.Exec(`CREATE DATABASE sorm_migrate_test`) // ошибка "exists" игнорируется
+
+	// заменяем имя базы в DSN
+	i := strings.LastIndex(dsn, "/")
+	rest := dsn[i+1:]
+	if q := strings.Index(rest, "?"); q >= 0 {
+		return dsn[:i+1] + "sorm_migrate_test" + rest[q:]
+	}
+	return dsn[:i+1] + "sorm_migrate_test"
+}
+
+func TestApplyPostgres(t *testing.T) {
+	dsn := pgDSN(t)
 	ctx := context.Background()
 
 	sdb, err := sql.Open("pgx", dsn) // database/sql поверх pgx (stdlib-адаптер)
@@ -106,7 +127,7 @@ func TestApplyPostgres(t *testing.T) {
 	}
 	defer sdb.Close()
 
-	for _, q := range []string{`DROP TABLE IF EXISTS api_keys`, `DROP TABLE IF EXISTS posts`, `DROP TABLE IF EXISTS users`} {
+	for _, q := range []string{`DROP TABLE IF EXISTS user_tags`, `DROP TABLE IF EXISTS tags`, `DROP TABLE IF EXISTS api_keys`, `DROP TABLE IF EXISTS posts`, `DROP TABLE IF EXISTS users`} {
 		if _, err := sdb.Exec(q); err != nil {
 			t.Fatal(err)
 		}

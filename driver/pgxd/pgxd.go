@@ -45,6 +45,30 @@ func (d db) Exec(ctx context.Context, sql string, args ...any) (int64, error) {
 	return ct.RowsAffected(), nil
 }
 
+// collectIDs читает RETURNING-строки multi-row INSERT'а.
+func collectIDs(br pgx.BatchResults, n int) ([]int64, error) {
+	rows, err := br.Query()
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	ids := make([]int64, 0, n)
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if len(ids) != n {
+		return nil, fmt.Errorf("pgxd: RETURNING вернул %d id, ожидали %d", len(ids), n)
+	}
+	return ids, nil
+}
+
 // translate конвертирует ошибки констрейнтов PostgreSQL (класс 23xxx)
 // в типизированный *sorm.ConstraintError.
 func translate(err error) error {
@@ -79,13 +103,13 @@ func (d db) ExecBatch(ctx context.Context, items []sorm.BatchItem) error {
 	}
 	br := d.p.SendBatch(ctx, b)
 	for _, it := range items {
-		if it.WantID {
-			var id int64
-			if err := br.QueryRow().Scan(&id); err != nil {
+		if it.IDCount > 0 {
+			ids, err := collectIDs(br, it.IDCount)
+			if err != nil {
 				br.Close()
 				return translate(err)
 			}
-			it.OnID(id)
+			it.OnIDs(ids)
 			continue
 		}
 		ct, err := br.Exec()

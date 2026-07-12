@@ -40,10 +40,12 @@ type Rows interface {
 type BatchItem struct {
 	SQL  string
 	Args []any
-	// WantID: INSERT с auto-PK. Адаптер добывает id через RETURNING
-	// (диалект умеет) или LastInsertId (MySQL) и вызывает OnID.
-	WantID bool
-	OnID   func(int64)
+	// IDCount > 0: multi-row INSERT с auto-PK на IDCount строк. Адаптер
+	// добывает идентификаторы через RETURNING (диалект умеет) или
+	// арифметику LastInsertId (MySQL — первый id батча, SQLite — последний)
+	// и вызывает OnIDs со срезом длины IDCount в порядке строк VALUES.
+	IDCount int
+	OnIDs   func(ids []int64)
 	// Check вызывается с числом затронутых строк (optimistic concurrency).
 	Check func(rowsAffected int64) error
 }

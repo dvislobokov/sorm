@@ -19,8 +19,8 @@ func TestGoldenTestmodels(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(schema.Entities) != 3 {
-		t.Fatalf("entities = %d, want 3", len(schema.Entities))
+	if len(schema.Entities) != 4 {
+		t.Fatalf("entities = %d, want 4", len(schema.Entities))
 	}
 
 	files, err := codegen.Generate(schema)
@@ -76,7 +76,8 @@ func TestSchemaShape(t *testing.T) {
 	if user.VersionIndex < 0 || user.Fields[user.VersionIndex].Col != "version" {
 		t.Errorf("version field not detected")
 	}
-	if len(user.Relations) != 1 || user.Relations[0].Kind != "hasMany" || user.Relations[0].Target != "Post" {
+	if len(user.Relations) != 2 || user.Relations[0].Kind != "hasMany" || user.Relations[0].Target != "Post" ||
+		user.Relations[1].Kind != "many2many" || user.Relations[1].JoinTable != "user_tags" {
 		t.Errorf("relations = %+v", user.Relations)
 	}
 

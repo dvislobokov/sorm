@@ -44,24 +44,130 @@ func Diff(ctx context.Context, dev *sql.DB, dialect, dir, name string) (string, 
 		return "", fmt.Errorf("sorm/migrate: plan: %w", err)
 	}
 
-	var b strings.Builder
-	fmt.Fprintf(&b, "-- sorm migration: %s\n", name)
+	var up strings.Builder
+	fmt.Fprintf(&up, "-- sorm migration: %s\n", name)
+	var downStmts []string
+	downComplete := true
 	for _, c := range plan.Changes {
 		if c.Comment != "" {
-			fmt.Fprintf(&b, "-- %s\n", c.Comment)
+			fmt.Fprintf(&up, "-- %s\n", c.Comment)
 		}
-		b.WriteString(strings.TrimRight(c.Cmd, ";"))
-		b.WriteString(";\n")
+		up.WriteString(strings.TrimRight(c.Cmd, ";"))
+		up.WriteString(";\n")
+
+		rev, err := c.ReverseStmts()
+		if err != nil || len(rev) == 0 {
+			downComplete = false
+			continue
+		}
+		downStmts = append(downStmts, rev...)
 	}
 
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return "", err
 	}
-	fname := time.Now().UTC().Format("20060102150405") + "_" + sanitizeName(name) + ".sql"
-	if err := os.WriteFile(filepath.Join(dir, fname), []byte(b.String()), 0o644); err != nil {
+	version := time.Now().UTC().Format("20060102150405") + "_" + sanitizeName(name)
+	fname := version + ".sql"
+	if err := os.WriteFile(filepath.Join(dir, fname), []byte(up.String()), 0o644); err != nil {
+		return "", err
+	}
+
+	// Down-файл: реверсы в обратном порядке. Если Atlas не смог обратить
+	// хотя бы одно изменение — down не пишем вовсе (честнее, чем полуоткат).
+	if downComplete && len(downStmts) > 0 {
+		var down strings.Builder
+		fmt.Fprintf(&down, "-- sorm migration (down): %s\n", name)
+		for i := len(downStmts) - 1; i >= 0; i-- {
+			down.WriteString(strings.TrimRight(downStmts[i], ";"))
+			down.WriteString(";\n")
+		}
+		if err := os.WriteFile(filepath.Join(dir, version+".down.sql"), []byte(down.String()), 0o644); err != nil {
+			return "", err
+		}
+	}
+
+	if err := WriteSum(dir); err != nil {
 		return "", err
 	}
 	return fname, nil
+}
+
+// Down откатывает последние steps применённых миграций по их *.down.sql
+// файлам (новые первыми) и удаляет записи из HistoryTable. Миграция без
+// down-файла останавливает откат с ошибкой.
+func Down(ctx context.Context, db *sql.DB, dialect, dir string, steps int) ([]string, error) {
+	var out []string
+	err := withMigrationLock(ctx, db, dialect, func() error {
+		reverted, err := down(ctx, db, dialect, dir, steps)
+		out = reverted
+		return err
+	})
+	return out, err
+}
+
+func down(ctx context.Context, db *sql.DB, dialect, dir string, steps int) ([]string, error) {
+	if err := VerifySum(dir); err != nil {
+		return nil, err
+	}
+	if err := ensureHistory(ctx, db, dialect); err != nil {
+		return nil, err
+	}
+	applied, err := appliedVersions(ctx, db)
+	if err != nil {
+		return nil, err
+	}
+	var versions []string
+	for v := range applied {
+		versions = append(versions, v)
+	}
+	sort.Sort(sort.Reverse(sort.StringSlice(versions)))
+
+	var reverted []string
+	for _, v := range versions {
+		if len(reverted) == steps {
+			break
+		}
+		downFile := strings.TrimSuffix(v, ".sql") + ".down.sql"
+		content, err := os.ReadFile(filepath.Join(dir, downFile))
+		if err != nil {
+			return reverted, fmt.Errorf("sorm/migrate: нет down-файла для %s: %w", v, err)
+		}
+		if err := revertFile(ctx, db, dialect, v, string(content)); err != nil {
+			return reverted, fmt.Errorf("sorm/migrate: %s: %w", downFile, err)
+		}
+		reverted = append(reverted, v)
+	}
+	return reverted, nil
+}
+
+func revertFile(ctx context.Context, db *sql.DB, dialect, version, content string) error {
+	stmts := SplitStatements(content)
+	record := fmt.Sprintf("DELETE FROM %s WHERE version = %s", HistoryTable, placeholder(dialect, 1))
+
+	if dialect == "mysql" {
+		for _, s := range stmts {
+			if _, err := db.ExecContext(ctx, s); err != nil {
+				return err
+			}
+		}
+		_, err := db.ExecContext(ctx, record, version)
+		return err
+	}
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	for _, s := range stmts {
+		if _, err := tx.ExecContext(ctx, s); err != nil {
+			_ = tx.Rollback()
+			return err
+		}
+	}
+	if _, err := tx.ExecContext(ctx, record, version); err != nil {
+		_ = tx.Rollback()
+		return err
+	}
+	return tx.Commit()
 }
 
 // Up применяет к db все ещё не применённые миграции из dir (по порядку имён
@@ -82,6 +188,9 @@ func Up(ctx context.Context, db *sql.DB, dialect, dir string) ([]string, error) 
 }
 
 func up(ctx context.Context, db *sql.DB, dialect, dir string) ([]string, error) {
+	if err := VerifySum(dir); err != nil {
+		return nil, err
+	}
 	if err := ensureHistory(ctx, db, dialect); err != nil {
 		return nil, err
 	}
@@ -114,6 +223,9 @@ func up(ctx context.Context, db *sql.DB, dialect, dir string) ([]string, error) 
 
 // Pending возвращает файлы, которые Up применил бы (без применения).
 func Pending(ctx context.Context, db *sql.DB, dialect, dir string) ([]string, error) {
+	if err := VerifySum(dir); err != nil {
+		return nil, err
+	}
 	if err := ensureHistory(ctx, db, dialect); err != nil {
 		return nil, err
 	}
@@ -213,9 +325,13 @@ func migrationFiles(dir string) ([]string, error) {
 	}
 	var files []string
 	for _, e := range entries {
-		if !e.IsDir() && strings.HasSuffix(e.Name(), ".sql") {
-			files = append(files, e.Name())
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".sql") {
+			continue
 		}
+		if strings.HasSuffix(e.Name(), ".down.sql") {
+			continue // down-файлы применяет Down, не Up
+		}
+		files = append(files, e.Name())
 	}
 	sort.Strings(files)
 	return files, nil

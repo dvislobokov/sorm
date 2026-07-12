@@ -3,6 +3,7 @@ package sorm
 import (
 	"context"
 	"fmt"
+	"iter"
 	"slices"
 	"strconv"
 
@@ -112,6 +113,47 @@ func (q QueryBuilder[E]) All(ctx context.Context) ([]*E, error) {
 		}
 	}
 	return out, nil
+}
+
+// Iter — стриминг результата: строки выдаются по мере чтения, без загрузки
+// всей выборки в память. Несовместим с With (eager loading требует полного
+// набора родителей) — в этом случае итератор выдаёт одну ошибку.
+//
+//	for u, err := range sorm.Query[models.User](db).Iter(ctx) {
+//	    if err != nil { return err }
+//	    ...
+//	}
+func (q QueryBuilder[E]) Iter(ctx context.Context) iter.Seq2[*E, error] {
+	return func(yield func(*E, error) bool) {
+		if len(q.includes) > 0 {
+			yield(nil, fmt.Errorf("sorm: Iter is incompatible with With/Include — use All"))
+			return
+		}
+		sqlStr, args := q.ToSQL()
+		rows, err := q.db.Query(ctx, sqlStr, args...)
+		if err != nil {
+			yield(nil, fmt.Errorf("sorm: select %s: %w", q.meta.Table, err))
+			return
+		}
+		defer rows.Close()
+
+		for rows.Next() {
+			e := new(E)
+			if err := rows.Scan(q.meta.Scan(e)...); err != nil {
+				yield(nil, fmt.Errorf("sorm: scan %s: %w", q.meta.Table, err))
+				return
+			}
+			if q.sess != nil {
+				e = storeOf[E](q.sess).trackScanned(e)
+			}
+			if !yield(e, nil) {
+				return
+			}
+		}
+		if err := rows.Err(); err != nil {
+			yield(nil, fmt.Errorf("sorm: select %s: %w", q.meta.Table, err))
+		}
+	}
 }
 
 // One возвращает первую строку или ErrNotFound.

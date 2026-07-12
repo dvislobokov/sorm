@@ -85,6 +85,8 @@ func mysqlDB(t *testing.T) sorm.DB {
 	t.Cleanup(func() { sdb.Close() })
 
 	stmts := append([]string{
+		`DROP TABLE IF EXISTS user_tags`,
+		`DROP TABLE IF EXISTS tags`,
 		`DROP TABLE IF EXISTS api_keys`,
 		`DROP TABLE IF EXISTS posts`,
 		`DROP TABLE IF EXISTS users`,
