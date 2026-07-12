@@ -1,9 +1,11 @@
 # sorm
 
-**Первая Go ORM с честным Unit of Work.** Загрузили граф сущностей, мутировали
-обычным Go-кодом, вызвали `SaveChanges` — sorm сам вычислит минимальный дифф,
-упорядочит запись по FK-зависимостям и применит её батчами в одной транзакции.
-Ни одна другая Go-библиотека этого не делает.
+**The first Go ORM with a real Unit of Work.**
+
+Load a graph of entities, mutate them with plain Go assignments, call
+`SaveChanges` — sorm computes the minimal diff, orders the writes by their
+foreign-key dependencies and applies everything in a single transaction.
+No other Go library does this.
 
 ```go
 s := sorm.NewSession(db)
@@ -12,32 +14,37 @@ user, _ := sorm.Track[models.User](s).
     With(u.Posts.Include()).
     One(ctx)
 
-user.Active = false          // обычные присваивания —
-user.Posts[0].Title = "new"  // никаких сеттеров и грязных флагов
+user.Active = false          // plain assignments —
+user.Posts[0].Title = "new"  // no setters, no dirty flags
 
-err := s.SaveChanges(ctx)    // дифф → топосорт → батч → одна транзакция
+err := s.SaveChanges(ctx)    // diff → topo-sort → batch → one transaction
 ```
 
-## Что внутри
+## Highlights
 
 | | |
 |---|---|
-| **Unit of Work** | identity map, snapshot-дифф без рефлексии (26 нс/сущность, 0 аллокаций), UPDATE только изменённых колонок, вставка графов с FK-fixup через `RETURNING` |
-| **Optimistic concurrency** | поле `sorm:"version"` → каждый UPDATE/DELETE несёт version-предикат; конфликт → типизированный `*ConflictError` |
-| **Типобезопасные запросы** | кодоген дескрипторов колонок: `Where(u.Age.Gte(18))` проверяется компилятором; условия — значения, композируются в `if`-ах (то, что не может sqlc) |
-| **Zero-value честность** | `Where(u.Active.Eq(false))` и `Set(u.Age.Set(0))` — полноценные операции (классический footgun GORM исключён по построению) |
-| **Связи** | hasMany/belongsTo: eager loading split-запросами, `Any`/`Is` → EXISTS-фильтры родителей по детям и наоборот |
-| **Проекции** | GroupBy/Having, типизированные агрегаты, JOIN по связям и произвольные, сканирование в ваши структуры |
-| **Миграции** | встроенный движок диффа (Atlas SDK, без внешнего CLI): декларативные `Apply`/`Plan` и версионные файлы `Diff`/`Up`/`Pending` — всё из кода; advisory lock от гонки реплик |
-| **3 СУБД** | PostgreSQL (pgx, батчи одним roundtrip), MySQL, SQLite — один код, разные адаптеры |
-| **Продовые мелочи** | `RunInTx` с ретраями deadlock/serialization, типизированные `ConstraintError`, `Instrument` для логирования SQL и трейсинга |
+| **Unit of Work** | identity map, reflection-free snapshot diffing (26 ns/entity, 0 allocs), UPDATEs carry only changed columns, graph inserts with FK fixup via `RETURNING` |
+| **Optimistic concurrency** | a `sorm:"version"` field makes every UPDATE/DELETE carry a version predicate; conflicts surface as a typed `*ConflictError` |
+| **Type-safe queries** | generated column descriptors: `Where(u.Age.Gte(18))` is checked by the compiler; predicates are values you compose in plain `if` statements |
+| **Zero-value honesty** | `Where(u.Active.Eq(false))` and `Set(u.Age.Set(0))` are real conditions — the classic GORM footgun is impossible by construction |
+| **Relations** | hasMany / belongsTo / hasOne / many2many; eager loading with filters, child ordering and arbitrary nesting; `EXISTS` filters in both directions |
+| **Projections** | GroupBy / Having, typed aggregates, relation-based and arbitrary joins, scanning into your own structs |
+| **Migrations** | embedded diff engine (Atlas SDK, no external CLI): declarative `Apply`/`Plan` and versioned files with `Diff`/`Up`/`Down`, checksums and an advisory lock against racing replicas |
+| **Three databases** | PostgreSQL (pgx, single-roundtrip batches), MySQL, SQLite — one code path, pluggable adapters |
+| **Production plumbing** | `RunInTx` with transient-error retries, typed `ConstraintError`s, `Instrument` middleware, OpenTelemetry tracing (`otelsorm`) |
 
-Эскейпы честные: `ToSQL()` покажет любой запрос, `Raw`/`RawAs` сканируют
-сырой SQL в ваши типы со строгой проверкой колонок.
+The escape hatches are first-class: `ToSQL()` shows the exact SQL of any
+query, `Raw`/`RawAs` scan raw SQL into your types with strict column checks.
 
-## Быстрый старт
+Benchmarks against GORM, Ent and raw `database/sql` live in
+[`benchmarks/`](benchmarks/README.md): reads within ~9% of raw and 1.8× faster
+than GORM; single-field updates faster than both — with optimistic
+concurrency included.
 
-**1. Опишите модели** — обычные структуры, никаких интерфейсов:
+## Quick start
+
+**1. Describe your models** — plain structs, no interfaces to implement:
 
 ```go
 package models
@@ -60,10 +67,10 @@ type Post struct {
 }
 ```
 
-**2. Сгенерируйте типизированный слой:** `go generate ./...` — появится
-пакет `sormgen` (компактный, читаемый в PR).
+**2. Generate the typed layer:** `go generate ./...` produces a compact,
+review-friendly `sormgen` package.
 
-**3. Подключитесь** через адаптер драйвера:
+**3. Connect** through a driver adapter:
 
 ```go
 pool, _ := pgxpool.New(ctx, dsn)
@@ -72,18 +79,18 @@ db := pgxd.Wrap(pool)                      // PostgreSQL
 // db := sqld.Wrap(sdb, my.Dialect{})      // MySQL
 ```
 
-**4. Схема** — из кода или версионными файлами:
+**4. Create the schema** — from code or with versioned files:
 
 ```go
-migrate.Apply(ctx, sdb, "postgres")        // дифф моделей против БД, применить
+migrate.Apply(ctx, sdb, "postgres")        // diff models vs database, apply
 ```
 
 ```bash
-sorm migrate diff -dev-dsn <пустая scratch-БД> add_users ./models  # файл в migrations/
-sorm migrate up -dsn <прод>                                        # применить
+sorm migrate diff -dev-dsn <empty scratch db> add_users ./models
+sorm migrate up -dsn <production dsn>
 ```
 
-**5. Запрашивайте и меняйте** — см. пример вверху; без трекинга:
+**5. Query and mutate** — see the session example above; without tracking:
 
 ```go
 users, _ := sorm.Query[models.User](db).
@@ -92,29 +99,44 @@ users, _ := sorm.Query[models.User](db).
     All(ctx)
 ```
 
-## Примеры
+## Documentation
 
-- [`examples/blog`](examples/blog) — тур по всем возможностям (8 секций,
-  от инспекции SQL до миграций из кода).
-- [`examples/webapp`](examples/webapp) — боевой каркас: net/http API,
-  PostgreSQL, три сгенерированные миграции, Dockerfile, Compose.
+The full guide lives in [`docs/guide`](docs/guide):
 
-## Документация
+1. [Getting started](docs/guide/01-getting-started.md)
+2. [Schema definition](docs/guide/02-schema.md) — tags, types, indexes
+3. [Queries](docs/guide/03-queries.md) — predicates, streaming, raw SQL
+4. [Sessions & Unit of Work](docs/guide/04-sessions.md) — tracking, SaveChanges, transactions
+5. [Relations](docs/guide/05-relations.md) — eager loading, nesting, many-to-many
+6. [Projections](docs/guide/06-projections.md) — aggregates, GROUP BY, joins
+7. [Migrations](docs/guide/07-migrations.md) — declarative & versioned
+8. [Observability & errors](docs/guide/08-observability.md) — logging, tracing, typed errors
+9. [Multiple databases](docs/guide/09-multi-database.md) — adapters and dialects
 
-- [Концепция и позиционирование](docs/concept.md)
-- [Детальный дизайн](docs/design.md)
-- [Анализ конкурентов](docs/competitive-analysis.md) и
-  [gap-анализ против EF Core](docs/efcore-gap-analysis.md)
+Plus the [API reference](docs/api.md).
 
-## Философия
+Design history (in Russian): [concept](docs/concept.md) ·
+[detailed design](docs/design.md) ·
+[competitive analysis](docs/competitive-analysis.md) ·
+[EF Core gap analysis](docs/efcore-gap-analysis.md).
 
-sorm не прячет SQL — он убирает ручную бухгалтерию изменений. Принципы,
-выведенные из чужих ошибок: никаких тихо отброшенных условий, ошибки только
-как возвращаемые значения, обязательный `ctx`, иммутабельные билдеры,
-`UPDATE` без `WHERE` не выполняется без явного `AllRows()`, предсказуемый
-SQL с инспекцией через `ToSQL()`.
+## Examples
 
-## Статус
+- [`examples/blog`](examples/blog) — a tour of every feature (8 sections,
+  from SQL inspection to in-code migrations).
+- [`examples/webapp`](examples/webapp) — a production-shaped skeleton:
+  net/http API, PostgreSQL, three generated migrations, Dockerfile, Compose.
 
-Активная разработка, API может меняться до v1. Тесты гоняются на
-PostgreSQL 17, MySQL 8 и SQLite на каждый коммит (CI), включая детектор гонок.
+## Philosophy
+
+sorm does not hide SQL — it removes the manual bookkeeping of change
+tracking. Its rules were distilled from other libraries' failure modes:
+no silently dropped conditions, errors are return values only, `ctx` is
+mandatory, builders are immutable, `UPDATE` without `WHERE` refuses to run
+unless you say `AllRows()`, and every query can be inspected with `ToSQL()`.
+
+## Status
+
+Under active development; the API may change before v1. Every commit runs
+the full test suite against PostgreSQL 17, MySQL 8 and SQLite (including
+the race detector) in CI.
