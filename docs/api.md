@@ -287,6 +287,11 @@ func Plan(ctx, db *sql.DB, dialect string) ([]string, error)
 
 // versioned files (dir + sorm_migrations history table)
 // Apply/Plan take ...Option; WithSchema(name) scopes inspection and diff
+
+func Seed(ctx, db *sql.DB, dialect, name string, fn func(ctx, tx *sql.Tx) error) error
+    // one-time data seed: recorded as "seed:<name>" in the history table;
+    // fn + record commit in one transaction; replicas serialize on the lock
+func SeedApplied(ctx, db *sql.DB, dialect, name string) (bool, error)
 func Diff(ctx, dev *sql.DB, dialect, dir, name string) (filename string, err error)
 func Up(ctx, db *sql.DB, dialect, dir string) (applied []string, err error)
 func Down(ctx, db *sql.DB, dialect, dir string, steps int) (reverted []string, err error)

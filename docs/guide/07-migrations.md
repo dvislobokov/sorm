@@ -76,6 +76,35 @@ handle suffices — nothing to set up.
   worse than none. `Down` stops with an error at the first migration that
   lacks a down file.
 
+## Seed data
+
+`migrate.Seed` runs a named data seed **exactly once per database** — the
+EF Core `HasData` use case, expressed as code:
+
+```go
+err := migrate.Seed(ctx, sdb, "postgres", "default-admin",
+    func(ctx context.Context, tx *sql.Tx) error {
+        _, err := tx.ExecContext(ctx,
+            `INSERT INTO users (email, name, active, created_at, version)
+             VALUES ($1, $2, true, now(), 1)`, "admin@corp.io", "Admin")
+        return err
+    })
+```
+
+- The name is recorded in the `sorm_migrations` history as `seed:<name>`;
+  new deploys and other replicas skip it. Concurrent callers serialize on
+  the same advisory lock as migrations.
+- The seed and its history record commit in **one transaction**: a failed
+  seed leaves no trace and simply runs again after the fix.
+- To evolve seeded data, add a new seed with a new name — an applied
+  seed's function is never re-executed.
+- `migrate.SeedApplied(ctx, db, dialect, name)` answers "has it run?".
+- `Down` ignores seed records (data seeds have no down files).
+
+Plain SQL seed files also work: drop a handwritten
+`<timestamp>_seed_x.sql` into the migrations directory — `Up` applies it
+like any migration, with checksums and history.
+
 ## CLI equivalents
 
 Thin wrappers over the same functions — handy in CI and Makefiles:

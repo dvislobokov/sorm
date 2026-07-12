@@ -120,6 +120,10 @@ func down(ctx context.Context, db *sql.DB, dialect, dir string, steps int) ([]st
 	}
 	var versions []string
 	for v := range applied {
+		// Seed records live in the same history but have no down files.
+		if isSeedVersion(v) {
+			continue
+		}
 		versions = append(versions, v)
 	}
 	sort.Sort(sort.Reverse(sort.StringSlice(versions)))
