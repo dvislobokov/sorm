@@ -62,6 +62,12 @@ func Update[E any](db DB) UpdateBuilder[E]
 
 func Delete[E any](db DB) DeleteBuilder[E]
     // Where · AllRows · Exec · ToSQL — same rules
+
+func Upsert[E any](db DB) UpsertBuilder[E]
+    // Rows(es ...*E) · OnConflict(cols ...ColOf[E]) · DoUpdate(cols ...ColOf[E])
+    // DoNothing() · Named · Exec(ctx) (int64, error) · ToSQL
+    // INSERT ... ON CONFLICT / ON DUPLICATE KEY; version bump + timestamps
+    // handled automatically; OnConflict required on PG/SQLite, ignored on MySQL
 ```
 
 ### Raw SQL

@@ -114,6 +114,37 @@ Safety rails:
 - On versioned entities, set-based updates automatically bump the
   `version` column, so open sessions still detect the conflict.
 
+## Upsert
+
+`INSERT ... ON CONFLICT` (PostgreSQL/SQLite) / `ON DUPLICATE KEY` (MySQL),
+multi-row, typed:
+
+```go
+n, err := sorm.Upsert[models.User](db).
+    Rows(u1, u2).
+    OnConflict(u.Email).          // conflict target (unique column/index)
+    DoUpdate(u.Name, u.Age).      // overwrite these from the new values
+    Exec(ctx)
+
+// Or skip conflicting rows entirely:
+n, err = sorm.Upsert[models.User](db).
+    Rows(u1).OnConflict(u.Email).DoNothing().Exec(ctx)
+```
+
+Semantics:
+
+- `DoUpdate` columns take the **incoming** values (`excluded.col` /
+  `VALUES(col)`); columns outside the list keep their stored values.
+- The `version` column is bumped automatically on the update path, and
+  `autoCreate`/`autoUpdate` timestamps are stamped on the inserted values.
+- `OnConflict` is required on PostgreSQL/SQLite and ignored on MySQL
+  (MySQL fires on *any* unique key — an engine rule). `DoNothing` on
+  MySQL renders as a PK self-assignment, not `INSERT IGNORE` (which
+  would swallow unrelated errors).
+- Auto-generated PKs are **not** written back into the entities — this
+  is a set-based statement; reload when you need the keys. The affected
+  count is driver-reported (MySQL counts an updated row as 2).
+
 ## JSON predicates
 
 ### Typed accessors (struct-shaped documents)
