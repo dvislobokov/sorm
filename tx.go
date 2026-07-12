@@ -39,6 +39,12 @@ func RunInTx(ctx context.Context, db DB, fn func(tx Tx) error) error {
 		if attempt == maxAttempts {
 			break
 		}
+		// surface the retry to instrumentation (metrics/tracing)
+		if em, ok := db.(interface {
+			EmitOp(context.Context, Op)
+		}); ok {
+			em.EmitOp(ctx, Op{Kind: "tx.retry"})
+		}
 		// jitter so that competitors don't retry in lockstep
 		sleep := backoff + time.Duration(rand.Int63n(int64(backoff)))
 		select {

@@ -26,7 +26,14 @@ type UpdateBuilder[E any] struct {
 	d       dialect.Dialect
 	assigns []Assign[E]
 	preds   []Pred[E]
+	name    string
 	allRows bool
+}
+
+// Named labels the statement for instrumentation (sorm.query.name).
+func (q UpdateBuilder[E]) Named(name string) UpdateBuilder[E] {
+	q.name = name
+	return q
 }
 
 func (q UpdateBuilder[E]) Set(as ...Assign[E]) UpdateBuilder[E] {
@@ -79,6 +86,7 @@ func (q UpdateBuilder[E]) ToSQL() (string, []any, error) {
 }
 
 func (q UpdateBuilder[E]) Exec(ctx context.Context) (int64, error) {
+	ctx = named(ctx, q.name)
 	sqlStr, args, err := q.ToSQL()
 	if err != nil {
 		return 0, err
@@ -100,7 +108,14 @@ type DeleteBuilder[E any] struct {
 	meta    *Meta[E]
 	d       dialect.Dialect
 	preds   []Pred[E]
+	name    string
 	allRows bool
+}
+
+// Named labels the statement for instrumentation (sorm.query.name).
+func (q DeleteBuilder[E]) Named(name string) DeleteBuilder[E] {
+	q.name = name
+	return q
 }
 
 func (q DeleteBuilder[E]) Where(ps ...Pred[E]) DeleteBuilder[E] {
@@ -128,6 +143,7 @@ func (q DeleteBuilder[E]) ToSQL() (string, []any, error) {
 }
 
 func (q DeleteBuilder[E]) Exec(ctx context.Context) (int64, error) {
+	ctx = named(ctx, q.name)
 	sqlStr, args, err := q.ToSQL()
 	if err != nil {
 		return 0, err

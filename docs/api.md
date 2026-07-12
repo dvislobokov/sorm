@@ -223,13 +223,33 @@ func Wrap(sdb *sql.DB, d dialect.Dialect) sorm.DB
 type Dialect struct{}               // Name, Placeholder, QuoteIdent, ReturningSupported
 ```
 
+### Query naming
+
+```go
+func WithQueryName(ctx context.Context, name string) context.Context
+func QueryNameFromContext(ctx context.Context) string
+// plus .Named(name) on QueryBuilder, UpdateBuilder, DeleteBuilder,
+// RawQuery and FromBuilder — the name reaches spans and metrics as
+// sorm.query.name (an explicit context name wins over Named).
+```
+
 ## Package `sorm/otelsorm`
 
 ```go
-func Wrap(db sorm.DB, opts ...Option) sorm.DB
+func Wrap(db sorm.DB, opts ...Option) sorm.DB   // traces + metrics
 func WithTracerProvider(tp trace.TracerProvider) Option
-func WithArgs() Option              // record query args (off by default)
+func WithMeterProvider(mp metric.MeterProvider) Option
+func WithArgs() Option              // record query args on spans (off by default)
+func WithoutTableAttr() Option      // drop best-effort db.collection.name
+func WithDBStats(sdb *sql.DB) Option            // pool gauges from database/sql
+func WithPoolStats(fn func() PoolStats) Option  // pool gauges from any source
+type PoolStats struct{ Max, Idle, Used, WaitCount int64; WaitDuration time.Duration }
 ```
+
+Metrics: `db.client.operation.duration`, `sorm.db.batch.size`,
+`sorm.db.statements`, `sorm.db.errors`, `sorm.db.rows.returned`,
+`sorm.tx.duration`, `sorm.tx.retries`, `sorm.pool.*` — see the
+[observability guide](guide/08-observability.md#the-metric-set).
 
 ## CLI `sorm`
 

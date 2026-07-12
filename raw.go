@@ -55,16 +55,24 @@ type RawQuery[T any] struct {
 	db   DB
 	sql  string
 	args []any
+	name string
 	err  error
 	// dests: result columns -> target indexes; targets: targets in plan order.
 	dests   func(resultCols []string) ([]int, *ScanError)
 	targets func(*T) []any
 }
 
+// Named labels the query for instrumentation (sorm.query.name).
+func (q RawQuery[T]) Named(name string) RawQuery[T] {
+	q.name = name
+	return q
+}
+
 func (q RawQuery[T]) All(ctx context.Context) ([]*T, error) {
 	if q.err != nil {
 		return nil, q.err
 	}
+	ctx = named(ctx, q.name)
 	rows, err := q.db.Query(ctx, q.sql, q.args...)
 	if err != nil {
 		return nil, fmt.Errorf("sorm: raw: %w", err)

@@ -40,6 +40,13 @@ type instrumented struct {
 
 func (d instrumented) Dialect() dialect.Dialect { return d.inner.Dialect() }
 
+// EmitOp lets library internals surface synthetic operations to the
+// instrumentation middleware — e.g. RunInTx emits Op{Kind: "tx.retry"}
+// before every transient-error retry. next is a no-op for such events.
+func (d instrumented) EmitOp(ctx context.Context, op Op) {
+	_ = d.fn(ctx, op, func(context.Context) error { return nil })
+}
+
 // RetryableError delegates to the adapter (for RunInTx).
 func (d instrumented) RetryableError(err error) bool {
 	if rc, ok := d.inner.(retryClassifier); ok {

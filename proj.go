@@ -27,6 +27,7 @@ type FromBuilder[E any] struct {
 	db     DB
 	d      dialect.Dialect
 	table  string
+	name   string
 	joins  []joinClause
 	preds  []Pred[E]
 	groups []colRef
@@ -35,6 +36,12 @@ type FromBuilder[E any] struct {
 	limit  *int
 	offset *int
 	err    error
+}
+
+// Named labels the projection for instrumentation (sorm.query.name).
+func (q FromBuilder[E]) Named(name string) FromBuilder[E] {
+	q.name = name
+	return q
 }
 
 func (q FromBuilder[E]) Where(ps ...Pred[E]) FromBuilder[E] {
@@ -312,7 +319,7 @@ func Project[R any, E any](q FromBuilder[E], exprs ...SelectExpr[E]) ProjQuery[R
 	}
 
 	sqlStr, args := buildProjection(q, exprs)
-	return ProjQuery[R]{db: q.db, sql: sqlStr, args: args, fieldIdx: fieldIdx}
+	return ProjQuery[R]{db: q.db, sql: sqlStr, args: args, fieldIdx: fieldIdx, name: q.name}
 }
 
 func buildProjection[E any](q FromBuilder[E], exprs []SelectExpr[E]) (string, []any) {
@@ -387,6 +394,7 @@ type ProjQuery[R any] struct {
 	sql      string
 	args     []any
 	fieldIdx []int
+	name     string
 	err      error
 }
 
@@ -396,6 +404,7 @@ func (q ProjQuery[R]) All(ctx context.Context) ([]*R, error) {
 	if q.err != nil {
 		return nil, q.err
 	}
+	ctx = named(ctx, q.name)
 	rows, err := q.db.Query(ctx, q.sql, q.args...)
 	if err != nil {
 		return nil, fmt.Errorf("sorm: project: %w", err)

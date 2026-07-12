@@ -36,8 +36,17 @@ type QueryBuilder[E any] struct {
 	orders   []Order[E]
 	includes []IncludeSpec[E]
 	sess     *Session
+	name     string
 	limit    *int
 	offset   *int
+}
+
+// Named labels the query for instrumentation: spans and metrics carry it
+// as sorm.query.name. Equivalent to wrapping the context in WithQueryName
+// (an explicit WithQueryName on the context wins over Named).
+func (q QueryBuilder[E]) Named(name string) QueryBuilder[E] {
+	q.name = name
+	return q
 }
 
 // Where adds conditions; multiple Where calls and multiple arguments are ANDed.
@@ -75,6 +84,7 @@ func (q QueryBuilder[E]) ToSQL() (string, []any) {
 
 // All runs the query without tracking. An empty result is an empty slice, nil error.
 func (q QueryBuilder[E]) All(ctx context.Context) ([]*E, error) {
+	ctx = named(ctx, q.name)
 	sqlStr, args := q.ToSQL()
 	rows, err := q.db.Query(ctx, sqlStr, args...)
 	if err != nil {
@@ -129,6 +139,7 @@ func (q QueryBuilder[E]) Iter(ctx context.Context) iter.Seq2[*E, error] {
 			yield(nil, fmt.Errorf("sorm: Iter is incompatible with With/Include — use All"))
 			return
 		}
+		ctx := named(ctx, q.name)
 		sqlStr, args := q.ToSQL()
 		rows, err := q.db.Query(ctx, sqlStr, args...)
 		if err != nil {
@@ -169,6 +180,7 @@ func (q QueryBuilder[E]) One(ctx context.Context) (*E, error) {
 }
 
 func (q QueryBuilder[E]) Count(ctx context.Context) (int64, error) {
+	ctx = named(ctx, q.name)
 	// count(*) ignores ORDER BY/LIMIT/OFFSET of the original builder.
 	base := q
 	base.orders = nil
