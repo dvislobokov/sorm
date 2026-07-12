@@ -116,8 +116,34 @@ Safety rails:
 
 ## JSON predicates
 
-Columns tagged `sorm:"json"` get a `JSONCol` descriptor with content
-predicates that render per dialect:
+### Typed accessors (struct-shaped documents)
+
+When a `sorm:"json"` column holds a **struct**, the generator walks its
+fields (honoring `json:` tags, nesting up to 3 levels) and emits a typed
+`<Field>Doc` companion — field names are compiler-checked and comparisons
+are dialect-correct for every value type:
+
+```go
+p := gen.Profile
+
+q.Where(p.PrefsDoc.Theme.Eq("dark"))            // string: Eq/Neq/Like/In/IsNull
+q.Where(p.PrefsDoc.Limit.Gt(5))                 // number: Gt/Gte/Lt/Lte/Eq —
+                                                //   NUMERIC on every dialect
+q.Where(p.PrefsDoc.Beta.IsTrue())               // bool: IsTrue/IsFalse/Eq
+q.Where(p.PrefsDoc.Notify.Email.IsTrue())       // nested objects nest accessors
+q.Where(p.PrefsDoc.Labels.Contains("go"))       // array containment (PG/MySQL)
+```
+
+Numeric and boolean comparisons are where typed accessors beat `Path`:
+PG casts the extraction (`(prefs #>> '{limit}')::numeric`), MySQL and
+SQLite compare the extracted value natively — no text-comparison traps.
+Fields the generator cannot type (maps, `any`, exotic keys) stay reachable
+via `Path`.
+
+### Path and document predicates
+
+For schemaless columns (`map[string]any`) and dynamic keys, `JSONCol`
+offers content predicates that render per dialect:
 
 ```go
 p := gen.Profile

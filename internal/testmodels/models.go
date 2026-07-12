@@ -14,8 +14,8 @@ import (
 )
 
 type User struct {
-	ID        int64   `sorm:"pk,auto"`
-	Email     string  `sorm:"unique"`
+	ID        int64  `sorm:"pk,auto"`
+	Email     string `sorm:"unique"`
 	Name      string
 	Nickname  *string
 	Active    bool
@@ -24,7 +24,7 @@ type User struct {
 	Avatar    []byte
 	CreatedAt time.Time
 	DeletedAt *time.Time
-	Version   int64   `sorm:"version"`
+	Version   int64    `sorm:"version"`
 	Posts     []*Post  `sorm:"hasMany:AuthorID"`
 	Tags      []*Tag   `sorm:"many2many:user_tags"`
 	Profile   *Profile `sorm:"hasOne:UserID"`
@@ -33,18 +33,27 @@ type User struct {
 // Profile is the hasOne side: the FK lives on the child, the parent holds a pointer navigation.
 // It also carries the JSON columns: a typed struct (nullable) and a schemaless map.
 type Profile struct {
-	ID     int64          `sorm:"pk,auto"`
-	UserID int64          `sorm:"fk:User.ID,uniqueIndex:uq_profiles_user"`
+	ID     int64 `sorm:"pk,auto"`
+	UserID int64 `sorm:"fk:User.ID,uniqueIndex:uq_profiles_user"`
 	Bio    string
 	Prefs  *ProfilePrefs  `sorm:"json"` // nullable JSONB/JSON/TEXT
 	Meta   map[string]any `sorm:"json"`
 }
 
 // ProfilePrefs is a plain (non-entity) struct stored as a JSON document.
+// Its fields get typed generated accessors (Profile.PrefsDoc.*).
 type ProfilePrefs struct {
-	Theme  string `json:"theme"`
-	Limit  int    `json:"limit"`
-	Labels []string `json:"labels,omitempty"`
+	Theme  string       `json:"theme"`
+	Limit  int          `json:"limit"`
+	Beta   bool         `json:"beta"`
+	Labels []string     `json:"labels,omitempty"`
+	Notify PrefsNotify  `json:"notify"`
+}
+
+// PrefsNotify is a nested JSON object (accessors nest too).
+type PrefsNotify struct {
+	Email bool   `json:"email"`
+	Chan  string `json:"chan"`
 }
 
 // Tag is a many2many side (the user_tags join table is generated implicitly).
@@ -74,10 +83,10 @@ type ApiKey struct {
 }
 
 type Post struct {
-	ID       int64      `sorm:"pk,auto"`
-	AuthorID int64      `sorm:"fk:User.ID,index:idx_posts_author_title"`
-	Author   *User      `sorm:"belongsTo:AuthorID"`
-	Title    string     `sorm:"index:idx_posts_author_title"` // composite (author_id, title)
+	ID       int64  `sorm:"pk,auto"`
+	AuthorID int64  `sorm:"fk:User.ID,index:idx_posts_author_title"`
+	Author   *User  `sorm:"belongsTo:AuthorID"`
+	Title    string `sorm:"index:idx_posts_author_title"` // composite (author_id, title)
 	Body     string
 	Views    int        `sorm:"index"` // single-column idx_posts_views
 	Comments []*Comment `sorm:"hasMany:PostID"`
@@ -86,9 +95,9 @@ type Post struct {
 // Device exercises native uuid.UUID support: a client-assigned UUID PK
 // (uuid.New() before Add) and a nullable UUID column.
 type Device struct {
-	ID      uuid.UUID  `sorm:"pk"`
-	OwnerID int64      `sorm:"fk:User.ID"`
-	Owner   *User      `sorm:"belongsTo:OwnerID"`
+	ID      uuid.UUID `sorm:"pk"`
+	OwnerID int64     `sorm:"fk:User.ID"`
+	Owner   *User     `sorm:"belongsTo:OwnerID"`
 	Token   *uuid.UUID
 	Name    string
 }

@@ -12,17 +12,49 @@ import (
 
 // Profile holds typed column descriptors for models.Profile.
 var Profile = struct {
-	ID     sorm.OrdCol[models.Profile, int64]
-	UserID sorm.OrdCol[models.Profile, int64]
-	Bio    sorm.StrCol[models.Profile]
-	Prefs  sorm.JSONCol[models.Profile]
-	Meta   sorm.JSONCol[models.Profile]
+	ID       sorm.OrdCol[models.Profile, int64]
+	UserID   sorm.OrdCol[models.Profile, int64]
+	Bio      sorm.StrCol[models.Profile]
+	Prefs    sorm.JSONCol[models.Profile]
+	PrefsDoc struct {
+		Theme  sorm.JSONStr[models.Profile]
+		Limit  sorm.JSONNum[models.Profile, int64]
+		Beta   sorm.JSONBool[models.Profile]
+		Labels sorm.JSONArr[models.Profile]
+		Notify struct {
+			Email sorm.JSONBool[models.Profile]
+			Chan  sorm.JSONStr[models.Profile]
+		}
+	}
+	Meta sorm.JSONCol[models.Profile]
 }{
 	ID:     sorm.NewOrdCol[models.Profile, int64]("profiles", "id"),
 	UserID: sorm.NewOrdCol[models.Profile, int64]("profiles", "user_id"),
 	Bio:    sorm.NewStrCol[models.Profile]("profiles", "bio"),
 	Prefs:  sorm.NewJSONCol[models.Profile]("profiles", "prefs"),
-	Meta:   sorm.NewJSONCol[models.Profile]("profiles", "meta"),
+	PrefsDoc: struct {
+		Theme  sorm.JSONStr[models.Profile]
+		Limit  sorm.JSONNum[models.Profile, int64]
+		Beta   sorm.JSONBool[models.Profile]
+		Labels sorm.JSONArr[models.Profile]
+		Notify struct {
+			Email sorm.JSONBool[models.Profile]
+			Chan  sorm.JSONStr[models.Profile]
+		}
+	}{
+		Theme:  sorm.NewJSONStr[models.Profile]("profiles", "prefs", "theme"),
+		Limit:  sorm.NewJSONNum[models.Profile, int64]("profiles", "prefs", "limit"),
+		Beta:   sorm.NewJSONBool[models.Profile]("profiles", "prefs", "beta"),
+		Labels: sorm.NewJSONArr[models.Profile]("profiles", "prefs", "labels"),
+		Notify: struct {
+			Email sorm.JSONBool[models.Profile]
+			Chan  sorm.JSONStr[models.Profile]
+		}{
+			Email: sorm.NewJSONBool[models.Profile]("profiles", "prefs", "notify.email"),
+			Chan:  sorm.NewJSONStr[models.Profile]("profiles", "prefs", "notify.chan"),
+		},
+	},
+	Meta: sorm.NewJSONCol[models.Profile]("profiles", "meta"),
 }
 
 type profileSnap struct {

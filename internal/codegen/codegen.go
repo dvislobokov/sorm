@@ -113,6 +113,10 @@ func genEntity(s *parse.Schema, e parse.Entity) ([]byte, error) {
 	g.pf("// %s holds typed column descriptors for %s.\nvar %s = struct {\n", e.Name, entT, e.Name)
 	for _, f := range e.Fields {
 		g.pf("\t%s %s\n", f.GoName, descType(entT, f))
+		if len(f.JSONDoc) > 0 {
+			// typed accessors for the fields of a struct-shaped json column
+			g.pf("\t%sDoc %s\n", f.GoName, jsonDocTypeDecl(entT, f.JSONDoc, "\t"))
+		}
 	}
 	hasManys := relationsOf(e, "hasMany")
 	for _, r := range hasManys {
@@ -133,6 +137,10 @@ func genEntity(s *parse.Schema, e parse.Entity) ([]byte, error) {
 	g.pf("}{\n")
 	for _, f := range e.Fields {
 		g.pf("\t%s: %s(%q, %q),\n", f.GoName, descCtor(entT, f), e.Table, f.Col)
+		if len(f.JSONDoc) > 0 {
+			g.pf("\t%sDoc: %s,\n", f.GoName,
+				jsonDocValue(entT, e.Table, f.Col, f.JSONDoc, nil, "\t"))
+		}
 	}
 	for _, r := range hasManys {
 		fk, err := fkFieldOf(s, r)
@@ -351,6 +359,57 @@ func genEntity(s *parse.Schema, e parse.Entity) ([]byte, error) {
 	g.pf("}\n")
 
 	return []byte(g.String()), nil
+}
+
+// jsonAccessorType — the runtime descriptor type for a JSON leaf.
+func jsonAccessorType(entT string, f parse.JSONField) string {
+	switch f.Kind {
+	case "string":
+		return fmt.Sprintf("sorm.JSONStr[%s]", entT)
+	case "int":
+		return fmt.Sprintf("sorm.JSONNum[%s, int64]", entT)
+	case "float":
+		return fmt.Sprintf("sorm.JSONNum[%s, float64]", entT)
+	case "bool":
+		return fmt.Sprintf("sorm.JSONBool[%s]", entT)
+	case "array":
+		return fmt.Sprintf("sorm.JSONArr[%s]", entT)
+	}
+	return ""
+}
+
+// jsonDocTypeDecl renders the anonymous struct type of a <Field>Doc block.
+func jsonDocTypeDecl(entT string, fields []parse.JSONField, indent string) string {
+	var b strings.Builder
+	b.WriteString("struct {\n")
+	for _, f := range fields {
+		if f.Kind == "object" {
+			fmt.Fprintf(&b, "%s\t%s %s\n", indent, f.GoName,
+				jsonDocTypeDecl(entT, f.Fields, indent+"\t"))
+			continue
+		}
+		fmt.Fprintf(&b, "%s\t%s %s\n", indent, f.GoName, jsonAccessorType(entT, f))
+	}
+	b.WriteString(indent + "}")
+	return b.String()
+}
+
+// jsonDocValue renders the composite literal of a <Field>Doc block.
+func jsonDocValue(entT, table, col string, fields []parse.JSONField, path []string, indent string) string {
+	var b strings.Builder
+	b.WriteString(jsonDocTypeDecl(entT, fields, indent) + "{\n")
+	for _, f := range fields {
+		p := append(append([]string{}, path...), f.Key)
+		if f.Kind == "object" {
+			fmt.Fprintf(&b, "%s\t%s: %s,\n", indent, f.GoName,
+				jsonDocValue(entT, table, col, f.Fields, p, indent+"\t"))
+			continue
+		}
+		ctor := strings.Replace(jsonAccessorType(entT, f), "sorm.JSON", "sorm.NewJSON", 1)
+		fmt.Fprintf(&b, "%s\t%s: %s(%q, %q, %q),\n", indent, f.GoName, ctor, table, col, strings.Join(p, "."))
+	}
+	b.WriteString(indent + "}")
+	return b.String()
 }
 
 // scanTarget — the rows.Scan destination for a field.

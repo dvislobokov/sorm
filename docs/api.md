@@ -32,6 +32,12 @@ type BytesCol[E]   // Eq, Neq, IsNull, IsNotNull, Set, SetNull
 type JSONCol[E]    // Path(p) JSONPath, Contains(v), HasKey(k), IsNull, IsNotNull, Set(any), SetNull
 type JSONPath[E]   // Eq, Neq, In, IsNull, IsNotNull (text extraction, dot notation)
 
+// typed accessors, generated as <Field>Doc for struct-shaped json columns:
+type JSONStr[E]      // Eq, Neq, Like, In, IsNull, IsNotNull
+type JSONNum[E, V]   // Eq, Neq, Gt, Gte, Lt, Lte, IsNull, IsNotNull (V: int64 | float64)
+type JSONBool[E]     // Eq, IsTrue, IsFalse, IsNull, IsNotNull
+type JSONArr[E]      // Contains (PG/MySQL), IsNull, IsNotNull
+
 // JSON helpers used by generated code (available for custom tooling):
 func JSONValue(v any) driver.Valuer
 func JSONScan[T any](dst *T) sql.Scanner

@@ -143,6 +143,100 @@ func (p JSONPath[E]) In(vs ...string) Pred[E] {
 func (p JSONPath[E]) IsNull() Pred[E]    { return pred[E](jsonPathNullNode{p.ref, p.path, false}) }
 func (p JSONPath[E]) IsNotNull() Pred[E] { return pred[E](jsonPathNullNode{p.ref, p.path, true}) }
 
+// --- typed accessors (generated for struct-typed json columns) ---
+//
+// For a `sorm:"json"` field whose Go type is a struct, `sorm gen` emits a
+// companion <Field>Doc descriptor with one typed accessor per JSON field:
+//
+//	q.Where(p.PrefsDoc.Theme.Eq("dark"))     // string — text extraction
+//	q.Where(p.PrefsDoc.Limit.Gt(5))          // number — dialect-correct cast
+//	q.Where(p.PrefsDoc.Beta.IsTrue())        // bool   — dialect-correct compare
+//	q.Where(p.PrefsDoc.Labels.Contains("go"))// array  — containment (PG/MySQL)
+//
+// Unlike Path(...), numeric and boolean comparisons are portable across
+// dialects, and field names are checked by the compiler.
+
+// JSONStr is a typed accessor for a string JSON field.
+type JSONStr[E any] struct {
+	ref  colRef
+	path string
+}
+
+func NewJSONStr[E any](table, col, path string) JSONStr[E] {
+	return JSONStr[E]{colRef{table, col}, path}
+}
+
+func (j JSONStr[E]) Eq(v string) Pred[E]  { return pred[E](jsonPathCmpNode{j.ref, j.path, "=", v}) }
+func (j JSONStr[E]) Neq(v string) Pred[E] { return pred[E](jsonPathCmpNode{j.ref, j.path, "<>", v}) }
+func (j JSONStr[E]) Like(p string) Pred[E] {
+	return pred[E](jsonPathCmpNode{j.ref, j.path, "LIKE", p})
+}
+func (j JSONStr[E]) In(vs ...string) Pred[E] { return pred[E](jsonPathInNode{j.ref, j.path, vs}) }
+func (j JSONStr[E]) IsNull() Pred[E]         { return pred[E](jsonPathNullNode{j.ref, j.path, false}) }
+func (j JSONStr[E]) IsNotNull() Pred[E]      { return pred[E](jsonPathNullNode{j.ref, j.path, true}) }
+
+// JSONNum is a typed accessor for a numeric JSON field. Comparisons are
+// numeric on every dialect: PG casts the text extraction to numeric,
+// MySQL and SQLite compare the extracted value natively.
+type JSONNum[E any, V int64 | float64] struct {
+	ref  colRef
+	path string
+}
+
+func NewJSONNum[E any, V int64 | float64](table, col, path string) JSONNum[E, V] {
+	return JSONNum[E, V]{colRef{table, col}, path}
+}
+
+func (j JSONNum[E, V]) Eq(v V) Pred[E]  { return pred[E](jsonNumCmpNode{j.ref, j.path, "=", v}) }
+func (j JSONNum[E, V]) Neq(v V) Pred[E] { return pred[E](jsonNumCmpNode{j.ref, j.path, "<>", v}) }
+func (j JSONNum[E, V]) Gt(v V) Pred[E]  { return pred[E](jsonNumCmpNode{j.ref, j.path, ">", v}) }
+func (j JSONNum[E, V]) Gte(v V) Pred[E] { return pred[E](jsonNumCmpNode{j.ref, j.path, ">=", v}) }
+func (j JSONNum[E, V]) Lt(v V) Pred[E]  { return pred[E](jsonNumCmpNode{j.ref, j.path, "<", v}) }
+func (j JSONNum[E, V]) Lte(v V) Pred[E] { return pred[E](jsonNumCmpNode{j.ref, j.path, "<=", v}) }
+func (j JSONNum[E, V]) IsNull() Pred[E] { return pred[E](jsonPathNullNode{j.ref, j.path, false}) }
+func (j JSONNum[E, V]) IsNotNull() Pred[E] {
+	return pred[E](jsonPathNullNode{j.ref, j.path, true})
+}
+
+// JSONBool is a typed accessor for a boolean JSON field.
+type JSONBool[E any] struct {
+	ref  colRef
+	path string
+}
+
+func NewJSONBool[E any](table, col, path string) JSONBool[E] {
+	return JSONBool[E]{colRef{table, col}, path}
+}
+
+func (j JSONBool[E]) Eq(v bool) Pred[E] { return pred[E](jsonBoolCmpNode{j.ref, j.path, v}) }
+func (j JSONBool[E]) IsTrue() Pred[E]   { return j.Eq(true) }
+func (j JSONBool[E]) IsFalse() Pred[E]  { return j.Eq(false) }
+func (j JSONBool[E]) IsNull() Pred[E]   { return pred[E](jsonPathNullNode{j.ref, j.path, false}) }
+func (j JSONBool[E]) IsNotNull() Pred[E] {
+	return pred[E](jsonPathNullNode{j.ref, j.path, true})
+}
+
+// JSONArr is a typed accessor for an array JSON field.
+type JSONArr[E any] struct {
+	ref  colRef
+	path string
+}
+
+func NewJSONArr[E any](table, col, path string) JSONArr[E] {
+	return JSONArr[E]{colRef{table, col}, path}
+}
+
+// Contains reports whether the array contains v (an element or a sub-array).
+// PostgreSQL and MySQL; a build error on SQLite.
+func (j JSONArr[E]) Contains(v any) Pred[E] {
+	return pred[E](jsonArrContainsNode{j.ref, j.path, v})
+}
+
+func (j JSONArr[E]) IsNull() Pred[E] { return pred[E](jsonPathNullNode{j.ref, j.path, false}) }
+func (j JSONArr[E]) IsNotNull() Pred[E] {
+	return pred[E](jsonPathNullNode{j.ref, j.path, true})
+}
+
 // --- dialect-aware AST nodes ---
 
 var jsonSegmentRe = regexp.MustCompile(`^[A-Za-z0-9_]+$`)
@@ -219,6 +313,121 @@ func (n jsonPathNullNode) writeSQL(w *sqlWriter) {
 	} else {
 		w.raw(" IS NULL")
 	}
+}
+
+// jsonNumCmpNode — numeric comparison of an extracted JSON value.
+type jsonNumCmpNode struct {
+	ref  colRef
+	path string
+	op   string
+	val  any
+}
+
+func (n jsonNumCmpNode) writeSQL(w *sqlWriter) {
+	segs, ok := jsonSegments(w, n.path)
+	if !ok {
+		return
+	}
+	switch w.d.Name() {
+	case "postgres":
+		w.raw("(")
+		w.col(n.ref)
+		w.raw(" #>> '{" + strings.Join(segs, ",") + "}')::numeric")
+	case "mysql":
+		// JSON_EXTRACT (without UNQUOTE) yields a JSON number that MySQL
+		// compares numerically with SQL numbers.
+		w.raw("JSON_EXTRACT(")
+		w.col(n.ref)
+		w.raw(", '$." + strings.Join(segs, ".") + "')")
+	default: // sqlite: json_extract returns a native INTEGER/REAL
+		w.raw("json_extract(")
+		w.col(n.ref)
+		w.raw(", '$." + strings.Join(segs, ".") + "')")
+	}
+	w.raw(" " + n.op + " ")
+	w.arg(n.val)
+}
+
+// jsonBoolCmpNode — boolean comparison of an extracted JSON value.
+type jsonBoolCmpNode struct {
+	ref  colRef
+	path string
+	val  bool
+}
+
+func (n jsonBoolCmpNode) writeSQL(w *sqlWriter) {
+	segs, ok := jsonSegments(w, n.path)
+	if !ok {
+		return
+	}
+	switch w.d.Name() {
+	case "postgres":
+		w.raw("(")
+		w.col(n.ref)
+		w.raw(" #>> '{" + strings.Join(segs, ",") + "}')::boolean = ")
+		w.arg(n.val)
+	case "mysql":
+		// compare JSON boolean with a JSON literal, avoiding int coercion traps
+		w.raw("JSON_EXTRACT(")
+		w.col(n.ref)
+		w.raw(", '$." + strings.Join(segs, ".") + "') = CAST(")
+		if n.val {
+			w.arg("true")
+		} else {
+			w.arg("false")
+		}
+		w.raw(" AS JSON)")
+	default: // sqlite stores JSON booleans as 1/0
+		w.raw("json_extract(")
+		w.col(n.ref)
+		w.raw(", '$." + strings.Join(segs, ".") + "') = ")
+		if n.val {
+			w.arg(1)
+		} else {
+			w.arg(0)
+		}
+	}
+}
+
+// jsonArrContainsNode — containment inside a nested array.
+type jsonArrContainsNode struct {
+	ref  colRef
+	path string
+	val  any
+}
+
+func (n jsonArrContainsNode) writeSQL(w *sqlWriter) {
+	segs, ok := jsonSegments(w, n.path)
+	if !ok {
+		return
+	}
+	switch w.d.Name() {
+	case "postgres":
+		w.col(n.ref)
+		w.raw(" #> '{" + strings.Join(segs, ",") + "}' @> ")
+		w.arg(JSONValue(n.val))
+		w.raw("::jsonb")
+	case "mysql":
+		w.raw("JSON_CONTAINS(")
+		w.col(n.ref)
+		w.raw(", ")
+		w.arg(JSONValue(n.val))
+		w.raw(", '$." + strings.Join(segs, ".") + "')")
+	default:
+		w.fail("sorm: json array Contains is not supported on " + w.d.Name())
+	}
+}
+
+// jsonSegments validates and splits a dot-notation path.
+func jsonSegments(w *sqlWriter, path string) ([]string, bool) {
+	segs := strings.Split(path, ".")
+	for _, s := range segs {
+		if !jsonSegmentRe.MatchString(s) {
+			w.fail(fmt.Sprintf("sorm: invalid json path segment %q (want [A-Za-z0-9_]+)", s))
+			return nil, false
+		}
+	}
+	return segs, true
 }
 
 type jsonContainsNode struct {

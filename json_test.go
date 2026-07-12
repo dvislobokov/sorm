@@ -31,8 +31,12 @@ func runJSONScenario(t *testing.T, db sorm.DB, dialect string) {
 	rich := &models.Profile{
 		UserID: alice.ID,
 		Bio:    "rich",
-		Prefs:  &models.ProfilePrefs{Theme: "dark", Limit: 10, Labels: []string{"go", "db"}},
-		Meta:   map[string]any{"tier": "pro", "flags": map[string]any{"beta": "on"}},
+		Prefs: &models.ProfilePrefs{
+			Theme: "dark", Limit: 10, Beta: true,
+			Labels: []string{"go", "db"},
+			Notify: models.PrefsNotify{Email: true, Chan: "slack"},
+		},
+		Meta: map[string]any{"tier": "pro", "flags": map[string]any{"beta": "on"}},
 	}
 	empty := &models.Profile{UserID: bob.ID, Bio: "empty"} // Prefs nil, Meta nil → NULL
 	sorm.Add(s2, rich, empty)
@@ -89,6 +93,43 @@ func runJSONScenario(t *testing.T, db sorm.DB, dialect string) {
 		}
 	} else if err != nil || n != 1 {
 		t.Fatalf("Contains: %d (err=%v)", n, err)
+	}
+
+	// 5b. Typed accessors: compiler-checked names, dialect-correct types.
+	byThemeT, err := sorm.Query[models.Profile](db).Where(p.PrefsDoc.Theme.Eq("dark")).Count(ctx)
+	if err != nil || byThemeT != 1 {
+		t.Fatalf("typed Theme.Eq: %d (err=%v)", byThemeT, err)
+	}
+	// Numeric comparison is portable — the reason typed accessors exist:
+	// Path() would compare text and break on SQLite vs PG.
+	byLimit, err := sorm.Query[models.Profile](db).Where(p.PrefsDoc.Limit.Gt(5)).Count(ctx)
+	if err != nil || byLimit != 1 {
+		t.Fatalf("typed Limit.Gt: %d (err=%v)", byLimit, err)
+	}
+	if n, err := sorm.Query[models.Profile](db).Where(p.PrefsDoc.Limit.Gt(100)).Count(ctx); err != nil || n != 0 {
+		t.Fatalf("typed Limit.Gt(100): %d (err=%v)", n, err)
+	}
+	// Booleans, portable across dialects (1/0 vs true/false handled per dialect).
+	beta, err := sorm.Query[models.Profile](db).Where(p.PrefsDoc.Beta.IsTrue()).Count(ctx)
+	if err != nil || beta != 1 {
+		t.Fatalf("typed Beta.IsTrue: %d (err=%v)", beta, err)
+	}
+	// Nested objects nest the accessors.
+	nestedT, err := sorm.Query[models.Profile](db).
+		Where(p.PrefsDoc.Notify.Email.IsTrue(), p.PrefsDoc.Notify.Chan.Eq("slack")).
+		Count(ctx)
+	if err != nil || nestedT != 1 {
+		t.Fatalf("typed nested accessors: %d (err=%v)", nestedT, err)
+	}
+	// Array containment (PG/MySQL; build error on SQLite).
+	arrQ := sorm.Query[models.Profile](db).Where(p.PrefsDoc.Labels.Contains("go"))
+	an, err := arrQ.Count(ctx)
+	if dialect == "sqlite" {
+		if err == nil || !strings.Contains(err.Error(), "not supported") {
+			t.Fatalf("sqlite array Contains must be a build error, got n=%d err=%v", an, err)
+		}
+	} else if err != nil || an != 1 {
+		t.Fatalf("typed Labels.Contains: %d (err=%v)", an, err)
 	}
 
 	// 6. Diff: nested mutation → UPDATE; no mutation → no-op.

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"go/types"
 	"reflect"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -69,6 +70,17 @@ type Field struct {
 	// BasicKind — underlying type for the SQL mapping: "string","int64",...,
 	// "time","bytes" (independent of named types).
 	BasicKind string
+	// JSONDoc — the field tree of a struct-typed json column (nil for
+	// maps/slices/unknown shapes); drives typed accessor generation.
+	JSONDoc []JSONField
+}
+
+// JSONField — one field of a JSON document (for typed accessors).
+type JSONField struct {
+	GoName string      // Theme
+	Key    string      // json key ("theme"); from the json tag or the field name
+	Kind   string      // "string" | "int" | "float" | "bool" | "array" | "object"
+	Fields []JSONField // populated for Kind == "object"
 }
 
 type Relation struct {
@@ -337,8 +349,87 @@ func parseJSONColumn(fv *types.Var, opts tagOpts, qual types.Qualifier) (*Field,
 		f.Nullable = true
 	}
 	f.TypeExpr = types.TypeString(t, qual)
+	f.JSONDoc = jsonDocOf(t, 0)
 	return f, nil
 }
+
+const jsonDocMaxDepth = 3
+
+// jsonDocOf walks a struct type stored as JSON and builds the field tree
+// for typed accessors. Non-struct shapes (maps, slices) return nil —
+// Path(...) remains the way to query them.
+func jsonDocOf(t types.Type, depth int) []JSONField {
+	st, ok := t.Underlying().(*types.Struct)
+	if !ok || isTime(t) || isUUID(t) {
+		return nil
+	}
+	var out []JSONField
+	for i := 0; i < st.NumFields(); i++ {
+		fv := st.Field(i)
+		if !fv.Exported() {
+			continue
+		}
+		key := fv.Name()
+		if tag, ok := reflect.StructTag(st.Tag(i)).Lookup("json"); ok {
+			name, _, _ := strings.Cut(tag, ",")
+			if name == "-" {
+				continue
+			}
+			if name != "" {
+				key = name
+			}
+		}
+		if !jsonKeyRe.MatchString(key) {
+			continue // exotic keys stay reachable via Path
+		}
+
+		ft := fv.Type()
+		if p, ok := ft.(*types.Pointer); ok {
+			ft = p.Elem()
+		}
+		jf := JSONField{GoName: fv.Name(), Key: key}
+		switch {
+		case isTime(ft) || isUUID(ft):
+			jf.Kind = "string" // serialized as JSON strings
+		case isByteSlice(ft):
+			continue // base64 blob — not queryable in a typed way
+		default:
+			switch u := ft.Underlying().(type) {
+			case *types.Basic:
+				info := u.Info()
+				switch {
+				case info&types.IsBoolean != 0:
+					jf.Kind = "bool"
+				case info&types.IsString != 0:
+					jf.Kind = "string"
+				case info&types.IsInteger != 0:
+					jf.Kind = "int"
+				case info&types.IsFloat != 0:
+					jf.Kind = "float"
+				default:
+					continue
+				}
+			case *types.Slice, *types.Array:
+				jf.Kind = "array"
+			case *types.Struct:
+				if depth+1 >= jsonDocMaxDepth {
+					continue
+				}
+				jf.Kind = "object"
+				jf.Fields = jsonDocOf(ft, depth+1)
+				if len(jf.Fields) == 0 {
+					continue
+				}
+			default:
+				continue // maps, interfaces, channels — Path fallback
+			}
+		}
+		out = append(out, jf)
+	}
+	return out
+}
+
+var jsonKeyRe = regexp.MustCompile(`^[A-Za-z0-9_]+$`)
 
 func parseColumn(fv *types.Var, opts tagOpts, qual types.Qualifier) (*Field, error) {
 	f := &Field{
