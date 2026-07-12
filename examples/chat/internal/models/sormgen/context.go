@@ -7,7 +7,7 @@ import (
 
 	"github.com/dvislobokov/sorm"
 
-	models "github.com/dvislobokov/sorm/examples/blog/models"
+	models "github.com/dvislobokov/sorm/examples/chat/internal/models"
 )
 
 // Context is the unit-of-work facade: a sorm.Session plus a typed set
@@ -17,17 +17,23 @@ import (
 type Context struct {
 	*sorm.Session
 
-	Articles sorm.Set[models.Article]
-	Authors  sorm.Set[models.Author]
+	ApiTokens sorm.Set[models.ApiToken]
+	AuditLogs sorm.Set[models.AuditLog]
+	Messages  sorm.Set[models.Message]
+	Rooms     sorm.Set[models.Room]
+	Users     sorm.Set[models.User]
 }
 
 // NewContext starts a unit of work over db (a pool or an open transaction).
 func NewContext(db sorm.DB) *Context {
 	s := sorm.NewSession(db)
 	return &Context{
-		Session:  s,
-		Articles: sorm.NewSet[models.Article](s),
-		Authors:  sorm.NewSet[models.Author](s),
+		Session:   s,
+		ApiTokens: sorm.NewSet[models.ApiToken](s),
+		AuditLogs: sorm.NewSet[models.AuditLog](s),
+		Messages:  sorm.NewSet[models.Message](s),
+		Rooms:     sorm.NewSet[models.Room](s),
+		Users:     sorm.NewSet[models.User](s),
 	}
 }
 

@@ -122,10 +122,7 @@ Design history (in Russian): [concept](docs/concept.md) ·
 
 ## Examples
 
-- [`examples/blog`](examples/blog) — a tour of every feature (8 sections,
-  from SQL inspection to in-code migrations).
-- [`examples/webapp`](examples/webapp) — a production-shaped skeleton:
-  net/http API, PostgreSQL, three generated migrations, Dockerfile, Compose.
+- [`examples/chat`](examples/chat) — the showcase application: a chat service on Echo with clean layering (transport / service / repository), a dedicated "chat" DB schema, JSON documents with typed accessors, PG arrays, custom scalars, audit via RunInTx, migrations + seed on startup, srog logging and sconf configuration.
 
 ## Philosophy
 

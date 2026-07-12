@@ -47,8 +47,7 @@ jobs:
       - name: Generated code is up to date
         run: |
           go run ./cmd/sorm gen ./internal/testmodels
-          go run ./cmd/sorm gen ./examples/blog/models
-          go run ./cmd/sorm gen ./examples/webapp/models
+          go run ./cmd/sorm gen ./examples/chat/internal/models
           git diff --exit-code
 
       # Полный набор: юниты + интеграция на PostgreSQL, MySQL и SQLite

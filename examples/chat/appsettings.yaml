@@ -1,0 +1,9 @@
+http:
+  addr: ":8080"
+
+db:
+  dsn: "postgres://postgres:postgres@localhost:5432/chat"
+  schema: "chat"
+
+log:
+  level: "information"

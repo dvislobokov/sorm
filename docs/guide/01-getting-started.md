@@ -146,4 +146,4 @@ err = s2.SaveChanges(ctx) // UPDATE users SET name = $1, version = version + 1 W
 - How tags map to columns, and how to declare indexes → [Schema](02-schema.md)
 - The full query surface, streaming, raw SQL → [Queries](03-queries.md)
 - What exactly `SaveChanges` does → [Sessions](04-sessions.md)
-- A complete runnable service → [`examples/webapp`](../../examples/webapp)
+- A complete runnable service → [`examples/chat`](../../examples/chat)

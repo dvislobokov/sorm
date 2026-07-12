@@ -133,5 +133,5 @@ positional arguments (standard Go `flag` behavior).
 4. Deploy: the application calls `migrate.Up` on startup (safe across
    replicas thanks to the lock), or an operator runs `sorm migrate up`.
 
-The [`examples/webapp`](../../examples/webapp) example implements exactly
+The [`examples/chat`](../../examples/chat) example implements exactly
 this flow, Dockerfile and Compose included.
