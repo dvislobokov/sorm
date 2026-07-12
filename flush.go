@@ -264,7 +264,12 @@ func (t *tracker[E]) buildPlan(p *flushPlan) error {
 	p.tableRefs[m.Table] = m.RefTables
 
 	// DELETE: tracked or with a populated PK; added+removed cancel each other out.
+	// Membership lives in the maps: a previous SaveChanges of the same session
+	// removes flushed entities from them (the order slices keep history).
 	for _, e := range t.removedOrder {
+		if _, pending := t.removed[e]; !pending {
+			continue
+		}
 		if _, wasAdded := t.added[e]; wasAdded {
 			continue
 		}
@@ -280,6 +285,11 @@ func (t *tracker[E]) buildPlan(p *flushPlan) error {
 		if _, gone := t.removed[r.e]; gone {
 			continue
 		}
+		// Stale rec: the row was deleted by a previous flush of this session
+		// (byPK holds the canonical rec; trackOrder keeps history).
+		if t.byPK[m.PKValue(r.e)] != r {
+			continue
+		}
 		idxs := m.Diff(r.snap, r.e)
 		if len(idxs) == 0 {
 			continue
@@ -289,6 +299,9 @@ func (t *tracker[E]) buildPlan(p *flushPlan) error {
 
 	// INSERT: added (except mutually cancelled ones).
 	for _, e := range t.addedOrder {
+		if _, pending := t.added[e]; !pending {
+			continue
+		}
 		if _, cancelled := t.removed[e]; cancelled {
 			continue
 		}

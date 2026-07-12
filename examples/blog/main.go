@@ -208,12 +208,60 @@ func session(ctx context.Context, db sorm.DB) error {
 	}
 	fmt.Println("author and articles deleted in a single SaveChanges (ordering handled by sorm)")
 
+	return contextDemo(ctx, db)
+}
+
+// contextDemo — the generated Context: DbContext-style facade over the
+// session. Sets are tracked query roots; Find checks the identity map
+// before touching the DB; RunInTx gives a fresh child context per attempt.
+func contextDemo(ctx context.Context, db sorm.DB) error {
+	fmt.Println("\n== 5. Generated Context (EF Core DbContext style) ==")
+
+	c := gen.NewContext(db)
+
+	// Tracked read through the set → plain mutation → SaveChanges.
+	sam, err := c.Authors.Where(a.Email.Eq("sam@x.io")).One(ctx)
+	if err != nil {
+		return err
+	}
+	sam.Rating = 4.95
+	if err := c.SaveChanges(ctx); err != nil {
+		return err
+	}
+	fmt.Printf("context update: %s rating=%.2f (no manual Track)\n", sam.Name, sam.Rating)
+
+	// Find: the entity is already tracked — no SQL, same pointer.
+	same, err := c.Authors.Find(ctx, sam.ID)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("Find from identity map: same pointer=%v\n", same == sam)
+
+	// Several operations atomically: a fresh child context per attempt,
+	// SaveChanges inside joins this transaction (no nesting).
+	err = c.RunInTx(ctx, func(txc *gen.Context) error {
+		ira, err := txc.Authors.Where(a.Email.Eq("ira@x.io")).One(ctx)
+		if err != nil {
+			return err
+		}
+		ira.Active = false
+		if err := txc.SaveChanges(ctx); err != nil {
+			return err
+		}
+		txc.Articles.Add(&models.Article{AuthorID: ira.ID, Title: "farewell post", Views: 1})
+		return txc.SaveChanges(ctx) // both flushes commit together
+	})
+	if err != nil {
+		return err
+	}
+	fmt.Println("RunInTx: two SaveChanges committed atomically")
+
 	return setBasedAndRaw(ctx, db)
 }
 
 // setBasedAndRaw — sessionless operations: bulk UPDATE/DELETE and the raw escape hatch.
 func setBasedAndRaw(ctx context.Context, db sorm.DB) error {
-	fmt.Println("\n== 5. Set-based operations and raw SQL ==")
+	fmt.Println("\n== 6. Set-based operations and raw SQL ==")
 
 	// Bulk UPDATE: typed assignments, automatic version increment.
 	// Update without Where does not fail silently — it returns a guard error;
@@ -259,7 +307,7 @@ func setBasedAndRaw(ctx context.Context, db sorm.DB) error {
 
 // projections — typed GROUP BY/HAVING/JOIN without SQL strings.
 func projections(ctx context.Context, db sorm.DB) error {
-	fmt.Println("\n== 6. Projections: typed aggregations and JOINs ==")
+	fmt.Println("\n== 7. Projections: typed aggregations and JOINs ==")
 
 	// The same aggregate as in the raw section, but compiler-checked:
 	// a typo in a column name or a mismatched result struct is an error
@@ -314,7 +362,7 @@ func projections(ctx context.Context, db sorm.DB) error {
 // with dialect/my. The schema is created by migrations from code (Atlas SDK):
 // no handwritten DDL.
 func multiDialect(ctx context.Context) error {
-	fmt.Println("\n== 7. Multi-dialect + migrations from code (in-memory SQLite) ==")
+	fmt.Println("\n== 8. Multi-dialect + migrations from code (in-memory SQLite) ==")
 
 	sdb, err := sql.Open("sqlite", ":memory:")
 	if err != nil {
@@ -364,7 +412,7 @@ func multiDialect(ctx context.Context) error {
 // SQLite), Up applies it to the target DB and maintains the sorm_migrations
 // history table. No external tools and no docker magic.
 func versionedMigrations(ctx context.Context) error {
-	fmt.Println("\n== 8. Versioned migrations from code ==")
+	fmt.Println("\n== 9. Versioned migrations from code ==")
 
 	dir := filepath.Join(os.TempDir(), "sorm-blog-migrations")
 	_ = os.RemoveAll(dir)

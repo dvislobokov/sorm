@@ -32,6 +32,67 @@ Queries **without** `Track` never touch the session — reading is untracked
 by default (the equivalent of EF's `AsNoTracking`, but as the default).
 Tracking is something you opt into, and pay for, explicitly.
 
+## The generated Context — DbContext, literally
+
+`sorm gen` also emits a `Context` into the sormgen package: a session plus
+a typed `sorm.Set` per entity, with set fields named after the tables
+(`Users`, `Posts`, `ApiKeys`). It is the recommended facade — the raw
+session API above is what it's built on.
+
+```go
+c := sormgen.NewContext(db)          // one per request / unit of work
+
+// Reads through a set are TRACKED (identity map, snapshots):
+user, err := c.Users.
+    Where(u.Email.Eq("alice@example.com")).
+    With(u.Posts.Include()).
+    One(ctx)
+
+user.Active = false                  // plain mutation — picked up by diff
+c.Posts.Add(&models.Post{Author: user, Title: "draft"})
+c.Posts.Remove(user.Posts[1])
+
+err = c.SaveChanges(ctx)             // one diff, one transaction
+```
+
+What sets add on top of the session:
+
+- **Tracked by default.** `c.Users.Where(...)` == `Track` + query. For
+  read-only paths use `c.Users.NoTracking().Where(...)` — no snapshots,
+  no identity map.
+- **`Find`** — fetch by primary key, checking the identity map first
+  (no SQL if the entity is already tracked, EF `Find` semantics):
+
+  ```go
+  u, err := c.Users.Find(ctx, 42)    // ErrNotFound if the row is absent
+  ```
+- **Transactions** — `c.RunInTx` runs the closure over a *fresh child
+  context* bound to the transaction; commit on nil, rollback on error,
+  automatic retries on transient failures:
+
+  ```go
+  err := c.RunInTx(ctx, func(txc *sormgen.Context) error {
+      from, err := txc.Accounts.Find(ctx, fromID)
+      if err != nil { return err }
+      from.Balance -= amount
+      if err := txc.SaveChanges(ctx); err != nil { return err }
+
+      txc.Transfers.Add(&models.Transfer{...})
+      return txc.SaveChanges(ctx)    // both flushes commit or roll back together
+  })
+  ```
+
+  Each retry attempt gets a **new** child context (no dirty state from a
+  rolled-back attempt); work only through `txc` inside the closure. A
+  `SaveChanges` on the child joins the ambient transaction instead of
+  opening a nested one.
+- **Multiple SaveChanges** on one context are safe: each flush clears the
+  pending work it applied; already-inserted entities become tracked and
+  subsequent mutations turn into UPDATEs.
+
+Like the session it wraps, a context is **not goroutine-safe** and is
+meant to be short-lived; the pool underneath is the long-lived object.
+
 ## What SaveChanges actually does
 
 1. **Diff.** Every tracked entity is compared field-by-field against the

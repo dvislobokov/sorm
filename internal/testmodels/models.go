@@ -43,11 +43,11 @@ type Profile struct {
 // ProfilePrefs is a plain (non-entity) struct stored as a JSON document.
 // Its fields get typed generated accessors (Profile.PrefsDoc.*).
 type ProfilePrefs struct {
-	Theme  string       `json:"theme"`
-	Limit  int          `json:"limit"`
-	Beta   bool         `json:"beta"`
-	Labels []string     `json:"labels,omitempty"`
-	Notify PrefsNotify  `json:"notify"`
+	Theme  string      `json:"theme"`
+	Limit  int         `json:"limit"`
+	Beta   bool        `json:"beta"`
+	Labels []string    `json:"labels,omitempty"`
+	Notify PrefsNotify `json:"notify"`
 }
 
 // PrefsNotify is a nested JSON object (accessors nest too).

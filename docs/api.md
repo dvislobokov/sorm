@@ -83,6 +83,31 @@ func Remove[E any](s *Session, entities ...*E)// schedule DELETE
 
 func (s *Session) SaveChanges(ctx) error   // diff → order → batch → one transaction
 func (s *Session) SaveChangesTx(ctx, tx Tx) error // flush into an external tx
+func (s *Session) DB() DB                  // the connection/tx the session runs on
+```
+
+### Sets & the generated Context
+
+`sorm gen` emits `sormgen.Context` — a Session plus a typed set per entity
+(field names from table names: `Users`, `ApiKeys`). Reads through a set
+are tracked; `NoTracking()` opts out.
+
+```go
+// generated:
+func NewContext(db sorm.DB) *Context
+func (c *Context) RunInTx(ctx, fn func(txc *Context) error) error
+    // fresh child context per attempt; SaveChanges joins the ambient tx
+
+// runtime:
+type Set[E any]
+func NewSet[E any](s *Session) Set[E]        // wired by NewContext
+func (s Set[E]) Query() QueryBuilder[E]      // tracked query root
+func (s Set[E]) NoTracking() QueryBuilder[E] // untracked, read-only
+func (s Set[E]) Where/OrderBy/With/Named/Limit(...) QueryBuilder[E]
+func (s Set[E]) All(ctx) ([]*E, error)       // + Count, Iter
+func (s Set[E]) Add(entities ...*E)
+func (s Set[E]) Remove(entities ...*E)
+func (s Set[E]) Find(ctx, pk any) (*E, error) // identity map first, then SELECT
 ```
 
 ### Transactions

@@ -21,6 +21,9 @@ func NewSession(db DB) *Session {
 	return &Session{db: db, stores: map[reflect.Type]anyStore{}}
 }
 
+// DB returns the connection or transaction the session runs on.
+func (s *Session) DB() DB { return s.db }
+
 // Track is the same query builder, but materialized entities go into
 // the tracker. Reloading the same row returns the already-tracked
 // pointer; database data does not overwrite local changes (EF semantics).
@@ -146,6 +149,11 @@ func (t *tracker[E]) trackScanned(e *E) *E {
 
 func (t *tracker[E]) collectAdded(set map[any]bool) {
 	for _, e := range t.addedOrder {
+		// Membership lives in the map: a previous SaveChanges of the same
+		// session removes flushed entities from it (addedOrder keeps history).
+		if _, pending := t.added[e]; !pending {
+			continue
+		}
 		if _, cancelled := t.removed[e]; !cancelled {
 			set[any(e)] = true
 		}
