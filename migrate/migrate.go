@@ -17,6 +17,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"strings"
 
 	atlasmigrate "ariga.io/atlas/sql/migrate"
 	"ariga.io/atlas/sql/mysql"
@@ -29,18 +30,21 @@ import (
 
 // Apply приводит схему БД к состоянию зарегистрированных моделей.
 // Сравнение ограничено таблицами sorm — чужие таблицы не трогаются.
+// Конкурентные вызовы сериализуются advisory lock'ом.
 func Apply(ctx context.Context, db *sql.DB, dialect string) error {
-	drv, changes, err := diff(ctx, db, dialect)
-	if err != nil {
-		return err
-	}
-	if len(changes) == 0 {
+	return withMigrationLock(ctx, db, dialect, func() error {
+		drv, changes, err := diff(ctx, db, dialect)
+		if err != nil {
+			return err
+		}
+		if len(changes) == 0 {
+			return nil
+		}
+		if err := drv.ApplyChanges(ctx, changes); err != nil {
+			return fmt.Errorf("sorm/migrate: apply: %w", err)
+		}
 		return nil
-	}
-	if err := drv.ApplyChanges(ctx, changes); err != nil {
-		return fmt.Errorf("sorm/migrate: apply: %w", err)
-	}
-	return nil
+	})
 }
 
 // Plan возвращает SQL-статименты диффа без применения.
@@ -171,7 +175,8 @@ func columnOf(t *schema.Table, name string) (*schema.Column, bool) {
 }
 
 func buildColumn(c sorm.ColumnDef, dialect string) (*schema.Column, error) {
-	typ := sorm.SQLTypeFor(dialect, c)
+	// Atlas-парсеры типов ожидают нижний регистр ("varchar(36)", не "VARCHAR(36)").
+	typ := strings.ToLower(sorm.SQLTypeFor(dialect, c))
 
 	var col *schema.Column
 	switch c.GoKind {
@@ -179,8 +184,15 @@ func buildColumn(c sorm.ColumnDef, dialect string) (*schema.Column, error) {
 		col = newCol(c.Nullable, func() *schema.Column { return schema.NewBoolColumn(c.Name, typ) },
 			func() *schema.Column { return schema.NewNullBoolColumn(c.Name, typ) })
 	case "string":
-		col = newCol(c.Nullable, func() *schema.Column { return schema.NewStringColumn(c.Name, typ) },
-			func() *schema.Column { return schema.NewNullStringColumn(c.Name, typ) })
+		// "varchar(36)" → тип "varchar" + размер отдельно: парсеры Atlas
+		// не принимают размер внутри имени типа.
+		base, size := splitSized(typ)
+		var opts []schema.StringOption
+		if size > 0 {
+			opts = append(opts, schema.StringSize(size))
+		}
+		col = newCol(c.Nullable, func() *schema.Column { return schema.NewStringColumn(c.Name, base, opts...) },
+			func() *schema.Column { return schema.NewNullStringColumn(c.Name, base, opts...) })
 	case "float32", "float64":
 		col = newCol(c.Nullable, func() *schema.Column { return schema.NewFloatColumn(c.Name, typ) },
 			func() *schema.Column { return schema.NewNullFloatColumn(c.Name, typ) })
@@ -205,6 +217,19 @@ func buildColumn(c sorm.ColumnDef, dialect string) (*schema.Column, error) {
 		}
 	}
 	return col, nil
+}
+
+// splitSized: "varchar(36)" → ("varchar", 36); "text" → ("text", 0).
+func splitSized(typ string) (string, int) {
+	open := strings.IndexByte(typ, '(')
+	if open < 0 || !strings.HasSuffix(typ, ")") {
+		return typ, 0
+	}
+	var size int
+	if _, err := fmt.Sscanf(typ[open:], "(%d)", &size); err != nil {
+		return typ, 0
+	}
+	return typ[:open], size
 }
 
 func newCol(nullable bool, notNull, null func() *schema.Column) *schema.Column {

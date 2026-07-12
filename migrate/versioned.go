@@ -68,7 +68,20 @@ func Diff(ctx context.Context, dev *sql.DB, dialect, dir, name string) (string, 
 // файлов) и записывает их в HistoryTable. Возвращает применённые файлы.
 // На PostgreSQL и SQLite каждый файл применяется в транзакции; MySQL
 // коммитит DDL неявно — файл исполняется постейтментно.
+//
+// Конкурентные вызовы (несколько реплик на старте) сериализуются
+// advisory lock'ом — файл не применится дважды.
 func Up(ctx context.Context, db *sql.DB, dialect, dir string) ([]string, error) {
+	var out []string
+	err := withMigrationLock(ctx, db, dialect, func() error {
+		applied, err := up(ctx, db, dialect, dir)
+		out = applied
+		return err
+	})
+	return out, err
+}
+
+func up(ctx context.Context, db *sql.DB, dialect, dir string) ([]string, error) {
 	if err := ensureHistory(ctx, db, dialect); err != nil {
 		return nil, err
 	}
