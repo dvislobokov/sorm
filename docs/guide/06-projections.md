@@ -42,6 +42,77 @@ sorm.Max[models.User](p.Views)
 An aggregate predicate placed in `Where` instead of `Having` is a build
 error with a message telling you so.
 
+`sorm.CountDistinct[E](col)` — `count(DISTINCT col)` — is portable across
+all three dialects.
+
+## Dialect-specific aggregates
+
+PostgreSQL and MySQL have rich aggregate vocabularies far beyond the
+portable five. They live in companion packages so the core stays
+dialect-neutral: **`pgagg`** (PostgreSQL) and **`myagg`** (MySQL).
+Using one on the wrong dialect is a build error returned when the query
+executes — never silently wrong SQL.
+
+```go
+import (
+    "github.com/dvislobokov/sorm/pgagg"
+    "github.com/dvislobokov/sorm/myagg"
+)
+
+// PostgreSQL
+rows, err := sorm.Project[stat](
+    sorm.From[models.User](db).GroupBy(u.Age),
+    sorm.Field(u.Age),
+    sorm.As(pgagg.StringAgg[models.User](u.Name, ", "), "names"),      // string_agg(name::text, $1)
+    sorm.As(pgagg.BoolAnd[models.User](u.Active), "all_active"),       // bool_and(active)
+    sorm.As(pgagg.PercentileCont[models.User](0.5, u.Age), "median"),  // percentile_cont(0.5) WITHIN GROUP (ORDER BY age)
+).All(ctx)
+
+// MySQL
+rows, err := sorm.Project[stat](
+    sorm.From[models.User](db).GroupBy(u.Age),
+    sorm.Field(u.Age),
+    sorm.As(myagg.GroupConcatSep[models.User](u.Name, ", "), "names"), // GROUP_CONCAT(name SEPARATOR ', ')
+    sorm.As(myagg.JSONArrayAgg[models.User](u.Age), "ages"),           // JSON_ARRAYAGG(age)
+).All(ctx)
+```
+
+| pgagg | myagg |
+|---|---|
+| `StringAgg(col, sep)` | `GroupConcat(col)` / `GroupConcatSep(col, sep)` / `GroupConcatDistinct(col, sep)` |
+| `ArrayAgg`, `JSONBAgg`, `JSONBObjectAgg(k, v)` | `JSONArrayAgg`, `JSONObjectAgg(k, v)` |
+| `BoolAnd`, `BoolOr` | `AnyValue(col)` |
+| `BitAnd`, `BitOr` | `BitAnd`, `BitOr`, `BitXor` |
+| `StdDev`, `StdDevPop`, `StdDevSamp`, `Variance`, `VarPop`, `VarSamp` | `StdDev`, `StdDevPop`, `StdDevSamp`, `VarPop`, `VarSamp` |
+| `Corr(y, x)`, `CovarPop(y, x)`, `CovarSamp(y, x)` | |
+| `PercentileCont(f, col)`, `PercentileDisc(f, col)`, `Mode(col)` | |
+
+All of them return `AggExpr[E, V]`, so `Having` comparisons work the
+same as with the portable aggregates.
+
+### Building your own
+
+Both packages are built on a small public extension API in the core —
+you can define aggregates (or any SQL function expression) the same way:
+
+```go
+// string_agg(name, ', ') — how pgagg.StringAgg is built:
+func StringAgg[E any](c sorm.AnyCol, sep string) sorm.AggExpr[E, string] {
+    return sorm.NewAgg[E, string](
+        sorm.AggDialect("postgres"),                       // guard: build error elsewhere
+        sorm.AggRaw("string_agg("), sorm.AggCol(c),        // raw SQL + qualified column
+        sorm.AggRaw("::text, "), sorm.AggArg(sep),         // bind parameter
+        sorm.AggRaw(")"),
+    )
+}
+```
+
+Parts: `AggRaw` (verbatim SQL), `AggCol` (qualified column reference),
+`AggArg` (bind parameter), `AggLit` (quote-escaped string literal, for
+spots where the grammar forbids placeholders — e.g. MySQL's
+`GROUP_CONCAT ... SEPARATOR`), `AggDialect` (guard). Omit `AggDialect`
+for portable expressions.
+
 ## Joins
 
 Two flavors:

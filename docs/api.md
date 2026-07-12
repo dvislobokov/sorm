@@ -138,7 +138,16 @@ func Sum[E, V](c ColV[V]) AggExpr[E, V]
 func Avg[E](c AnyCol) AggExpr[E, float64]
 func Min[E, V](c ColV[V]) AggExpr[E, V]
 func Max[E, V](c ColV[V]) AggExpr[E, V]
+func CountDistinct[E](c AnyCol) AggExpr[E, int64]    // count(DISTINCT col), portable
 // AggExpr comparisons (Eq/Gt/Gte/Lt/Lte) yield Pred[E] valid only in Having
+
+// extension API for custom / dialect-specific aggregates
+func NewAgg[E any, V comparable](parts ...AggPart) AggExpr[E, V]
+func AggRaw(sql string) AggPart      // verbatim SQL fragment
+func AggCol(c AnyCol) AggPart        // qualified column reference
+func AggArg(v any) AggPart           // bind parameter
+func AggLit(s string) AggPart        // quote-escaped string literal
+func AggDialect(name string) AggPart // guard: build error on any other dialect
 
 // select list
 func Field[E](c ColOf[E]) SelectExpr[E]              // root column, E inferred
@@ -155,6 +164,44 @@ func CrossJoin[C, E]() JoinSpec[E]
 
 func Project[R, E any](q FromBuilder[E], exprs ...SelectExpr[E]) ProjQuery[R]
     // All(ctx) ([]*R, error) · One(ctx) (*R, error) · ToSQL() (string, []any, error)
+```
+
+## Package `pgagg` — PostgreSQL aggregates
+
+Guarded: executing on another dialect returns a build error.
+
+```go
+func StringAgg[E](c AnyCol, sep string) AggExpr[E, string]   // string_agg(col::text, $1)
+func ArrayAgg[E](c AnyCol) AggExpr[E, string]                // array_agg(col)
+func JSONBAgg[E](c AnyCol) AggExpr[E, string]                // jsonb_agg(col)
+func JSONBObjectAgg[E](k, v AnyCol) AggExpr[E, string]       // jsonb_object_agg(k, v)
+func BoolAnd[E](c AnyCol) AggExpr[E, bool]                   // bool_and(col)
+func BoolOr[E](c AnyCol) AggExpr[E, bool]                    // bool_or(col)
+func BitAnd[E](c AnyCol) AggExpr[E, int64]
+func BitOr[E](c AnyCol) AggExpr[E, int64]
+func StdDev[E](c AnyCol) AggExpr[E, float64]                 // + StdDevPop, StdDevSamp
+func Variance[E](c AnyCol) AggExpr[E, float64]               // + VarPop, VarSamp
+func Corr[E](y, x AnyCol) AggExpr[E, float64]
+func CovarPop[E](y, x AnyCol) AggExpr[E, float64]            // + CovarSamp
+func PercentileCont[E](fraction float64, orderBy AnyCol) AggExpr[E, float64]
+    // percentile_cont($1) WITHIN GROUP (ORDER BY col); + PercentileDisc
+func Mode[E](orderBy AnyCol) AggExpr[E, string]              // mode() WITHIN GROUP (ORDER BY col)
+```
+
+## Package `myagg` — MySQL aggregates
+
+Guarded the same way.
+
+```go
+func GroupConcat[E](c AnyCol) AggExpr[E, string]                     // GROUP_CONCAT(col)
+func GroupConcatSep[E](c AnyCol, sep string) AggExpr[E, string]      // ... SEPARATOR 'sep'
+func GroupConcatDistinct[E](c AnyCol, sep string) AggExpr[E, string] // GROUP_CONCAT(DISTINCT ...)
+func JSONArrayAgg[E](c AnyCol) AggExpr[E, string]                    // JSON_ARRAYAGG(col)
+func JSONObjectAgg[E](k, v AnyCol) AggExpr[E, string]                // JSON_OBJECTAGG(k, v)
+func AnyValue[E, V](c ColV[V]) AggExpr[E, V]                         // ANY_VALUE(col)
+func StdDev[E](c AnyCol) AggExpr[E, float64]                         // + StdDevPop, StdDevSamp
+func VarPop[E](c AnyCol) AggExpr[E, float64]                         // + VarSamp
+func BitAnd[E](c AnyCol) AggExpr[E, int64]                           // + BitOr, BitXor
 ```
 
 ## Package `sorm` — infrastructure
