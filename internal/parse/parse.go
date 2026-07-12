@@ -27,6 +27,7 @@ const (
 type Schema struct {
 	PkgPath  string // import path of the models package
 	PkgName  string
+	Naming   string // identifier naming strategy (NamingSnake/Camel/Pascal)
 	Entities []Entity // sorted by name — deterministic generation
 }
 
@@ -97,8 +98,33 @@ type Relation struct {
 	Slice     bool
 }
 
+// Naming strategies for derived table and column identifiers.
+// Explicit overrides (col:, table:) always win regardless of strategy.
+const (
+	NamingSnake  = "snake"  // CreatedAt → created_at, ApiKey → api_keys (default)
+	NamingCamel  = "camel"  // CreatedAt → createdAt, ApiKey → apiKeys
+	NamingPascal = "pascal" // CreatedAt → CreatedAt, ApiKey → ApiKeys
+)
+
+// Option configures Load.
+type Option func(*config)
+
+type config struct{ naming string }
+
+// WithNaming sets the identifier naming strategy (NamingSnake/Camel/Pascal).
+func WithNaming(naming string) Option { return func(c *config) { c.naming = naming } }
+
 // Load parses the models package in dir.
-func Load(dir string) (*Schema, error) {
+func Load(dir string, opts ...Option) (*Schema, error) {
+	c := config{naming: NamingSnake}
+	for _, o := range opts {
+		o(&c)
+	}
+	switch c.naming {
+	case NamingSnake, NamingCamel, NamingPascal:
+	default:
+		return nil, fmt.Errorf("unknown naming strategy %q (snake|camel|pascal)", c.naming)
+	}
 	cfg := &packages.Config{
 		Mode: packages.NeedName | packages.NeedTypes | packages.NeedTypesInfo,
 		Dir:  dir,
@@ -115,7 +141,7 @@ func Load(dir string) (*Schema, error) {
 		return nil, fmt.Errorf("package %s does not compile: %v", pkg.PkgPath, pkg.Errors[0])
 	}
 
-	s := &Schema{PkgPath: pkg.PkgPath, PkgName: pkg.Name}
+	s := &Schema{PkgPath: pkg.PkgPath, PkgName: pkg.Name, Naming: c.naming}
 
 	scope := pkg.Types.Scope()
 	names := scope.Names()
@@ -138,7 +164,7 @@ func Load(dir string) (*Schema, error) {
 		if st == nil || !hasPKTag(st) {
 			continue
 		}
-		ent, err := parseEntity(name, st, pkg.Types, entityNames)
+		ent, err := parseEntity(name, st, pkg.Types, entityNames, c.naming)
 		if err != nil {
 			return nil, fmt.Errorf("%s.%s: %w", pkg.Name, name, err)
 		}
@@ -197,8 +223,8 @@ func hasPKTag(st *types.Struct) bool {
 	return false
 }
 
-func parseEntity(name string, st *types.Struct, modelsPkg *types.Package, entityNames map[string]bool) (*Entity, error) {
-	ent := &Entity{Name: name, Table: pluralSnake(name), PKIndex: -1, VersionIndex: -1}
+func parseEntity(name string, st *types.Struct, modelsPkg *types.Package, entityNames map[string]bool, naming string) (*Entity, error) {
+	ent := &Entity{Name: name, Table: RenamePlural(naming, name), PKIndex: -1, VersionIndex: -1}
 
 	qual := func(p *types.Package) string {
 		if p == modelsPkg {
@@ -223,7 +249,7 @@ func parseEntity(name string, st *types.Struct, modelsPkg *types.Package, entity
 		// A JSON column? Checked before navigation detection: a struct-typed
 		// field tagged sorm:"json" is a column, not a relation.
 		if opts.has("json") {
-			f, err := parseJSONColumn(fv, opts, qual)
+			f, err := parseJSONColumn(fv, opts, qual, naming)
 			if err != nil {
 				return nil, fmt.Errorf("field %s: %w", fv.Name(), err)
 			}
@@ -242,7 +268,7 @@ func parseEntity(name string, st *types.Struct, modelsPkg *types.Package, entity
 			continue
 		}
 
-		f, err := parseColumn(fv, opts, qual)
+		f, err := parseColumn(fv, opts, qual, naming)
 		if err != nil {
 			return nil, fmt.Errorf("field %s: %w", fv.Name(), err)
 		}
@@ -320,10 +346,10 @@ func namedStructIn(t types.Type, pkg *types.Package) string {
 // parseJSONColumn handles `sorm:"json"` fields: any marshalable Go type
 // (struct, map, slice), nullable via a pointer. []byte is rejected —
 // ambiguous with the bytes column kind.
-func parseJSONColumn(fv *types.Var, opts tagOpts, qual types.Qualifier) (*Field, error) {
+func parseJSONColumn(fv *types.Var, opts tagOpts, qual types.Qualifier, naming string) (*Field, error) {
 	f := &Field{
 		GoName:    fv.Name(),
-		Col:       snake(fv.Name()),
+		Col:       Rename(naming, fv.Name()),
 		Kind:      KindJSON,
 		BasicKind: "json",
 		Unique:    opts.has("unique"),
@@ -436,10 +462,10 @@ func jsonDocOf(t types.Type, depth int) []JSONField {
 
 var jsonKeyRe = regexp.MustCompile(`^[A-Za-z0-9_]+$`)
 
-func parseColumn(fv *types.Var, opts tagOpts, qual types.Qualifier) (*Field, error) {
+func parseColumn(fv *types.Var, opts tagOpts, qual types.Qualifier, naming string) (*Field, error) {
 	f := &Field{
 		GoName:     fv.Name(),
-		Col:        snake(fv.Name()),
+		Col:        Rename(naming, fv.Name()),
 		PK:         opts.has("pk"),
 		Auto:       opts.has("auto"),
 		Unique:     opts.has("unique"),
@@ -704,8 +730,47 @@ func snake(s string) string {
 
 func isLower(r rune) bool { return r >= 'a' && r <= 'z' }
 
-func pluralSnake(name string) string {
-	s := snake(name)
+// Rename derives an identifier from a Go name per the naming strategy:
+// UserID → user_id | userId | UserId.
+func Rename(naming, goName string) string {
+	return joinWords(naming, strings.Split(snake(goName), "_"))
+}
+
+// RenamePlural derives a table name: the last word is pluralized.
+// ApiKey → api_keys | apiKeys | ApiKeys.
+func RenamePlural(naming, goName string) string {
+	ws := strings.Split(snake(goName), "_")
+	ws[len(ws)-1] = plural(ws[len(ws)-1])
+	return joinWords(naming, ws)
+}
+
+func joinWords(naming string, ws []string) string {
+	switch naming {
+	case NamingCamel:
+		out := ws[0]
+		for _, w := range ws[1:] {
+			out += title(w)
+		}
+		return out
+	case NamingPascal:
+		out := ""
+		for _, w := range ws {
+			out += title(w)
+		}
+		return out
+	default: // NamingSnake
+		return strings.Join(ws, "_")
+	}
+}
+
+func title(w string) string {
+	if w == "" {
+		return w
+	}
+	return strings.ToUpper(w[:1]) + w[1:]
+}
+
+func plural(s string) string {
 	switch {
 	case strings.HasSuffix(s, "y") && len(s) > 1 && !isVowel(rune(s[len(s)-2])):
 		return s[:len(s)-1] + "ies"

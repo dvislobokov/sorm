@@ -37,7 +37,7 @@ func main() {
 	var err error
 	switch os.Args[1] {
 	case "gen":
-		err = runGen(argDir(os.Args[2:]))
+		err = runGen(os.Args[2:])
 	case "schema":
 		err = runSchema(os.Args[2:])
 	case "migrate":
@@ -63,25 +63,25 @@ func main() {
 
 func usage() {
 	fmt.Fprintln(os.Stderr, `usage:
-  sorm gen [models dir]
-  sorm schema -dialect postgres|mysql|sqlite [-out schema.sql] [models dir]
-  sorm migrate diff [-dialect postgres] [-dir migrations] [-dev-dsn DSN] <name> [models dir]
+  sorm gen [-naming snake|camel|pascal] [models dir]
+  sorm schema -dialect postgres|mysql|sqlite [-out schema.sql] [-naming ...] [models dir]
+  sorm migrate diff [-dialect postgres] [-dir migrations] [-dev-dsn DSN] [-naming ...] <name> [models dir]
   sorm migrate up -dsn DSN [-dialect postgres] [-dir migrations]
-(flags go before positional arguments)`)
+(flags go before positional arguments; -naming must match across commands)`)
 	os.Exit(2)
 }
 
-func argDir(args []string) string {
-	for _, a := range args {
-		if len(a) > 0 && a[0] != '-' {
-			return a
-		}
+func runGen(args []string) error {
+	fs := flag.NewFlagSet("gen", flag.ExitOnError)
+	naming := fs.String("naming", "snake", "identifier naming strategy: snake|camel|pascal")
+	if err := fs.Parse(args); err != nil {
+		return err
 	}
-	return "."
-}
-
-func runGen(dir string) error {
-	schema, err := parse.Load(dir)
+	dir := "."
+	if fs.NArg() > 0 {
+		dir = fs.Arg(0)
+	}
+	schema, err := parse.Load(dir, parse.WithNaming(*naming))
 	if err != nil {
 		return err
 	}
@@ -107,6 +107,7 @@ func runSchema(args []string) error {
 	fs := flag.NewFlagSet("schema", flag.ExitOnError)
 	dialect := fs.String("dialect", "postgres", "postgres|mysql|sqlite")
 	out := fs.String("out", "", "output file (default stdout)")
+	naming := fs.String("naming", "snake", "identifier naming strategy: snake|camel|pascal")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -115,7 +116,7 @@ func runSchema(args []string) error {
 		dir = fs.Arg(0)
 	}
 
-	schema, err := parse.Load(dir)
+	schema, err := parse.Load(dir, parse.WithNaming(*naming))
 	if err != nil {
 		return err
 	}
@@ -143,8 +144,8 @@ var driverNames = map[string]string{
 
 // registerModels loads the models package and registers TableDefs —
 // after that sorm/migrate sees the desired schema without importing sormgen.
-func registerModels(modelsDir string) error {
-	schema, err := parse.Load(modelsDir)
+func registerModels(modelsDir, naming string) error {
+	schema, err := parse.Load(modelsDir, parse.WithNaming(naming))
 	if err != nil {
 		return err
 	}
@@ -183,6 +184,7 @@ func runMigrateDiff(args []string) error {
 	dialect := fs.String("dialect", "postgres", "postgres|mysql|sqlite")
 	dir := fs.String("dir", "migrations", "versioned migrations directory")
 	devDSN := fs.String("dev-dsn", "", "DSN of an empty scratch DB for replay (sqlite: in-memory by default)")
+	naming := fs.String("naming", "snake", "identifier naming strategy: snake|camel|pascal (must match sorm gen)")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -203,7 +205,7 @@ func runMigrateDiff(args []string) error {
 		dsn = ":memory:"
 	}
 
-	if err := registerModels(modelsDir); err != nil {
+	if err := registerModels(modelsDir, *naming); err != nil {
 		return err
 	}
 	dev, err := openDB(*dialect, dsn)

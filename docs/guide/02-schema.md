@@ -17,6 +17,23 @@ type User struct {
 }
 ```
 
+## Naming strategies
+
+Derived identifiers default to snake_case: `CreatedAt` → `created_at`,
+table `ApiKey` → `api_keys`. The `-naming` flag of `sorm gen` switches the
+strategy for the whole schema:
+
+| Strategy | Column (`UserID`) | Table (`ApiKey`) |
+|---|---|---|
+| `snake` (default) | `user_id` | `api_keys` |
+| `camel` | `userId` | `apiKeys` |
+| `pascal` | `UserId` | `ApiKeys` |
+
+Explicit `col:` / `table:` overrides always win. Pass the **same**
+`-naming` to `sorm schema` and `sorm migrate diff` — the DDL must be
+derived with the same rules the queries use. Changing the strategy on an
+existing database means a rename migration for every derived identifier.
+
 ## Tag reference
 
 Options are comma-separated inside one `sorm:"..."` tag.

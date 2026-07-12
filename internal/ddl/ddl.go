@@ -138,7 +138,7 @@ func JoinTableDefs(s *parse.Schema) ([]sorm.TableDef, error) {
 			out = append(out, sorm.TableDef{
 				Name: r.JoinTable,
 				Columns: []sorm.ColumnDef{
-					joinCol(e), joinCol(target),
+					joinCol(e, s.Naming), joinCol(target, s.Naming),
 				},
 			})
 		}
@@ -146,10 +146,10 @@ func JoinTableDefs(s *parse.Schema) ([]sorm.TableDef, error) {
 	return out, nil
 }
 
-func joinCol(e parse.Entity) sorm.ColumnDef {
+func joinCol(e parse.Entity, naming string) sorm.ColumnDef {
 	pk := e.PK()
 	return sorm.ColumnDef{
-		Name:     parse.Snake(e.Name) + "_id",
+		Name:     parse.Rename(naming, e.Name+"ID"),
 		GoKind:   pk.BasicKind,
 		SQLType:  pk.SQLType,
 		PK:       true,

@@ -230,7 +230,7 @@ func genEntity(s *parse.Schema, e parse.Entity) ([]byte, error) {
 	for _, r := range m2ms {
 		childT := "models." + r.Target
 		g.pf("\t%s: sorm.NewManyToMany[%s, %s](\n", r.GoName, entT, childT)
-		g.pf("\t\t%q, %q, %q,\n", r.JoinTable, parse.Snake(e.Name)+"_id", parse.Snake(r.Target)+"_id")
+		g.pf("\t\t%q, %q, %q,\n", r.JoinTable, parse.Rename(s.Naming, e.Name+"ID"), parse.Rename(s.Naming, r.Target+"ID"))
 		g.pf("\t\tfunc(e *%s) { e.%s = []*%s{} },\n", entT, r.GoName, childT)
 		g.pf("\t\tfunc(e *%s, c *%s) { e.%s = append(e.%s, c) },\n", entT, childT, r.GoName, r.GoName)
 		g.pf("\t),\n")
