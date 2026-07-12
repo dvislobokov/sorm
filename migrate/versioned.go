@@ -33,7 +33,7 @@ func Diff(ctx context.Context, dev *sql.DB, dialect, dir, name string) (string, 
 	if _, err := Up(ctx, dev, dialect, dir); err != nil {
 		return "", fmt.Errorf("github.com/dvislobokov/sorm/migrate: replay on dev db: %w", err)
 	}
-	drv, changes, err := diff(ctx, dev, dialect)
+	drv, changes, err := diff(ctx, dev, dialect, nil)
 	if err != nil {
 		return "", err
 	}

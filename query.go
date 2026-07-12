@@ -25,7 +25,7 @@ func dialectOf(db DB) dialect.Dialect {
 // The builder is immutable: every method returns a copy, so reusing a base
 // builder is safe (no state leaks between queries).
 func Query[E any](db DB) QueryBuilder[E] {
-	return QueryBuilder[E]{db: db, meta: metaFor[E](), d: dialectOf(db)}
+	return QueryBuilder[E]{db: db, meta: metaFor[E](), d: dialectOf(db), schema: schemaOf(db)}
 }
 
 type QueryBuilder[E any] struct {
@@ -36,6 +36,7 @@ type QueryBuilder[E any] struct {
 	orders   []Order[E]
 	includes []IncludeSpec[E]
 	sess     *Session
+	schema   string
 	name     string
 	limit    *int
 	offset   *int
@@ -214,9 +215,9 @@ func (q QueryBuilder[E]) Count(ctx context.Context) (int64, error) {
 }
 
 func (q QueryBuilder[E]) buildSelect(selectList string) (string, []any, error) {
-	w := newSQLWriter(q.d)
+	w := newSchemaSQLWriter(q.d, q.schema)
 	w.raw("SELECT " + selectList + " FROM ")
-	w.ident(q.meta.Table)
+	w.table(q.meta.Table)
 
 	if len(q.preds) > 0 {
 		w.raw(" WHERE ")

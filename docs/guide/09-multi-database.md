@@ -3,6 +3,25 @@
 One code path, three databases. The core never imports a driver — it
 talks to `sorm.DB`, and adapters translate.
 
+## Database schemas
+
+`sorm.InSchema` binds a connection to a named schema — every table sorm
+renders becomes qualified (`"billing"."orders"`), while the models stay
+schema-agnostic:
+
+```go
+db := sorm.InSchema(pgxd.Wrap(pool), "billing")
+c  := sormgen.NewContext(db)          // queries, flush, Include, RunInTx —
+                                      // everything lands in "billing"
+```
+
+Different wrappers over one pool give per-schema multi-tenancy: the same
+entities, one connection pool, isolated data. On MySQL a "schema" is a
+database name; on SQLite an attached database name. `Raw`/`RawAs` text is
+never rewritten. For migrations pass `migrate.WithSchema("billing")` to
+`Apply`/`Plan`; versioned `Up`/`Down` apply files on the connection as-is —
+point the DSN at the schema (`search_path` / database name).
+
 ## Adapters
 
 ### PostgreSQL — `sorm/driver/pgxd`

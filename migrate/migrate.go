@@ -33,9 +33,9 @@ import (
 // Apply brings the database schema in line with the registered models.
 // The comparison is limited to sorm tables — foreign tables are left alone.
 // Concurrent calls are serialized with an advisory lock.
-func Apply(ctx context.Context, db *sql.DB, dialect string) error {
+func Apply(ctx context.Context, db *sql.DB, dialect string, opts ...Option) error {
 	return withMigrationLock(ctx, db, dialect, func() error {
-		drv, changes, err := diff(ctx, db, dialect)
+		drv, changes, err := diff(ctx, db, dialect, opts)
 		if err != nil {
 			return err
 		}
@@ -50,8 +50,8 @@ func Apply(ctx context.Context, db *sql.DB, dialect string) error {
 }
 
 // Plan returns the diff's SQL statements without applying them.
-func Plan(ctx context.Context, db *sql.DB, dialect string) ([]string, error) {
-	drv, changes, err := diff(ctx, db, dialect)
+func Plan(ctx context.Context, db *sql.DB, dialect string, opts ...Option) ([]string, error) {
+	drv, changes, err := diff(ctx, db, dialect, opts)
 	if err != nil {
 		return nil, err
 	}
@@ -69,7 +69,22 @@ func Plan(ctx context.Context, db *sql.DB, dialect string) ([]string, error) {
 	return out, nil
 }
 
-func diff(ctx context.Context, db *sql.DB, dialect string) (atlasmigrate.Driver, []schema.Change, error) {
+// Option configures Apply/Plan/Diff.
+type Option func(*config)
+
+type config struct{ schema string }
+
+// WithSchema scopes inspection and diffing to a named database schema
+// (PostgreSQL schema / MySQL database). Pair it with sorm.InSchema on the
+// runtime side. Versioned Up/Down apply files on the connection as-is -
+// point the DSN at the schema (search_path / database name).
+func WithSchema(name string) Option { return func(c *config) { c.schema = name } }
+
+func diff(ctx context.Context, db *sql.DB, dialect string, opts []Option) (atlasmigrate.Driver, []schema.Change, error) {
+	var c config
+	for _, o := range opts {
+		o(&c)
+	}
 	drv, err := open(db, dialect)
 	if err != nil {
 		return nil, nil, err
@@ -85,7 +100,7 @@ func diff(ctx context.Context, db *sql.DB, dialect string) (atlasmigrate.Driver,
 	}
 
 	// Inspect only sorm tables: the diff will not propose dropping foreign ones.
-	current, err := drv.InspectSchema(ctx, "", &schema.InspectOptions{Tables: names})
+	current, err := drv.InspectSchema(ctx, c.schema, &schema.InspectOptions{Tables: names})
 	if err != nil {
 		return nil, nil, fmt.Errorf("github.com/dvislobokov/sorm/migrate: inspect: %w", err)
 	}

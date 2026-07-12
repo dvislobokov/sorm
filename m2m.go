@@ -34,7 +34,7 @@ func (r ManyToMany[E, C]) Link(ctx context.Context, db DB, parent *E, children .
 	pm, cm := metaFor[E](), metaFor[C]()
 	d := dialectOf(db)
 
-	sql := "INSERT INTO " + d.QuoteIdent(r.joinTable) + " (" +
+	sql := "INSERT INTO " + qualifiedTable(d, schemaOf(db), r.joinTable) + " (" +
 		d.QuoteIdent(r.parentCol) + ", " + d.QuoteIdent(r.childCol) + ") VALUES "
 	args := make([]any, 0, len(children)*2)
 	for i, c := range children {
@@ -56,9 +56,9 @@ func (r ManyToMany[E, C]) Unlink(ctx context.Context, db DB, parent *E, children
 		return nil
 	}
 	pm, cm := metaFor[E](), metaFor[C]()
-	w := newSQLWriter(dialectOf(db))
+	w := newSchemaSQLWriter(dialectOf(db), schemaOf(db))
 	w.raw("DELETE FROM ")
-	w.ident(r.joinTable)
+	w.table(r.joinTable)
 	w.raw(" WHERE ")
 	w.ident(r.parentCol)
 	w.raw(" = ")
@@ -119,13 +119,13 @@ func (r ManyToMany[E, C]) Include(opts ...ChildOpt[C]) IncludeSpec[E] {
 		childSeen := map[any]bool{}
 		var childKeys []any
 		for _, chunk := range chunked(keys) {
-			w := newSQLWriter(dialectOf(db))
+			w := newSchemaSQLWriter(dialectOf(db), schemaOf(db))
 			w.raw("SELECT ")
 			w.ident(r.parentCol)
 			w.raw(", ")
 			w.ident(r.childCol)
 			w.raw(" FROM ")
-			w.ident(r.joinTable)
+			w.table(r.joinTable)
 			w.raw(" WHERE ")
 			w.ident(r.parentCol)
 			w.raw(" IN (")
@@ -212,11 +212,11 @@ type m2mExistsNode struct {
 
 func (n m2mExistsNode) writeSQL(w *sqlWriter) {
 	w.raw("EXISTS (SELECT 1 FROM ")
-	w.ident(n.joinTable)
+	w.table(n.joinTable)
 	w.raw(" WHERE ")
 	w.col(colRef{n.joinTable, n.parentCol})
 	w.raw(" = ")
-	w.ident(n.parentTable)
+	w.table(n.parentTable)
 	w.raw(".")
 	w.ident(n.parentPK)
 	if len(n.preds) > 0 {
@@ -225,7 +225,7 @@ func (n m2mExistsNode) writeSQL(w *sqlWriter) {
 		w.raw(" IN (SELECT ")
 		w.ident(n.childPK)
 		w.raw(" FROM ")
-		w.ident(n.childTable)
+		w.table(n.childTable)
 		w.raw(" WHERE ")
 		logicalNode{"AND", n.preds}.writeSQL(w)
 		w.raw(")")

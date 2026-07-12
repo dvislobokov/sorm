@@ -17,13 +17,14 @@ import (
 // For versioned entities the version column is incremented automatically —
 // open sessions will properly catch the conflict.
 func Update[E any](db DB) UpdateBuilder[E] {
-	return UpdateBuilder[E]{db: db, meta: metaFor[E](), d: dialectOf(db)}
+	return UpdateBuilder[E]{db: db, meta: metaFor[E](), d: dialectOf(db), schema: schemaOf(db)}
 }
 
 type UpdateBuilder[E any] struct {
 	db      DB
 	meta    *Meta[E]
 	d       dialect.Dialect
+	schema  string
 	assigns []Assign[E]
 	preds   []Pred[E]
 	name    string
@@ -59,9 +60,9 @@ func (q UpdateBuilder[E]) ToSQL() (string, []any, error) {
 	if len(q.preds) == 0 && !q.allRows {
 		return "", nil, errors.New("sorm: update without Where — use AllRows() to update the whole table")
 	}
-	w := newSQLWriter(q.d)
+	w := newSchemaSQLWriter(q.d, q.schema)
 	w.raw("UPDATE ")
-	w.ident(q.meta.Table)
+	w.table(q.meta.Table)
 	w.raw(" SET ")
 	for i, a := range q.assigns {
 		if i > 0 {
@@ -100,13 +101,14 @@ func (q UpdateBuilder[E]) Exec(ctx context.Context) (int64, error) {
 
 // Delete is a set-based DELETE. Same rules: without Where, AllRows() is required.
 func Delete[E any](db DB) DeleteBuilder[E] {
-	return DeleteBuilder[E]{db: db, meta: metaFor[E](), d: dialectOf(db)}
+	return DeleteBuilder[E]{db: db, meta: metaFor[E](), d: dialectOf(db), schema: schemaOf(db)}
 }
 
 type DeleteBuilder[E any] struct {
 	db      DB
 	meta    *Meta[E]
 	d       dialect.Dialect
+	schema  string
 	preds   []Pred[E]
 	name    string
 	allRows bool
@@ -132,9 +134,9 @@ func (q DeleteBuilder[E]) ToSQL() (string, []any, error) {
 	if len(q.preds) == 0 && !q.allRows {
 		return "", nil, errors.New("sorm: delete without Where — use AllRows() to delete the whole table")
 	}
-	w := newSQLWriter(q.d)
+	w := newSchemaSQLWriter(q.d, q.schema)
 	w.raw("DELETE FROM ")
-	w.ident(q.meta.Table)
+	w.table(q.meta.Table)
 	if len(q.preds) > 0 {
 		w.raw(" WHERE ")
 		logicalNode{"AND", nodesOf(q.preds)}.writeSQL(w)

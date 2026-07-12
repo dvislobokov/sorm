@@ -14,6 +14,8 @@ import (
 // flushPlan — the assembled write plan: statements and the insert dependency graph.
 type flushPlan struct {
 	d dialect.Dialect
+	// schema — non-empty for InSchema connections: qualifies table names.
+	schema string
 	// now — a single timestamp for the whole flush: every autoCreate/autoUpdate
 	// field stamped in this SaveChanges gets the same value.
 	now time.Time
@@ -49,6 +51,7 @@ type insertNode struct {
 func (s *Session) flush(ctx context.Context, db DB) (post func(), err error) {
 	p := &flushPlan{
 		d:         db.Dialect(),
+		schema:    schemaOf(db),
 		now:       time.Now(),
 		addedSet:  map[any]bool{},
 		inserts:   map[any]*insertNode{},
@@ -100,7 +103,7 @@ func (s *Session) flush(ctx context.Context, db DB) (post func(), err error) {
 		sort.Slice(level, func(i, j int) bool { return level[i].seq < level[j].seq })
 
 		// values time: parents from previous levels already have PKs (fixup inside).
-		items := groupInserts(p.d, level)
+		items := groupInserts(p.d, p.schema, level)
 		if err := db.ExecBatch(ctx, items); err != nil {
 			return nil, err
 		}
@@ -129,7 +132,7 @@ const (
 
 // groupInserts merges same-level inserts into multi-row INSERTs:
 // consecutive nodes of the same table → INSERT ... VALUES (...),(...),...
-func groupInserts(d dialect.Dialect, level []*insertNode) []BatchItem {
+func groupInserts(d dialect.Dialect, schema string, level []*insertNode) []BatchItem {
 	var items []BatchItem
 	for start := 0; start < len(level); {
 		n := level[start]
@@ -144,20 +147,20 @@ func groupInserts(d dialect.Dialect, level []*insertNode) []BatchItem {
 			end++
 		}
 		group := level[start:end]
-		items = append(items, buildInsertItem(d, group))
+		items = append(items, buildInsertItem(d, schema, group))
 		start = end
 	}
 	return items
 }
 
-func buildInsertItem(d dialect.Dialect, group []*insertNode) BatchItem {
+func buildInsertItem(d dialect.Dialect, schema string, group []*insertNode) BatchItem {
 	first := group[0]
 	args := make([]any, 0, len(group)*len(first.insertCols))
 	for _, n := range group {
 		args = append(args, n.values()...)
 	}
 	item := BatchItem{
-		SQL:  multiInsertSQL(d, first, len(group)),
+		SQL:  multiInsertSQL(d, schema, first, len(group)),
 		Args: args,
 	}
 	if first.auto {
@@ -171,11 +174,11 @@ func buildInsertItem(d dialect.Dialect, group []*insertNode) BatchItem {
 	return item
 }
 
-func multiInsertSQL(d dialect.Dialect, n *insertNode, rows int) string {
+func multiInsertSQL(d dialect.Dialect, schema string, n *insertNode, rows int) string {
 	var b strings.Builder
 	b.Grow(64 + rows*len(n.insertCols)*5)
 	b.WriteString("INSERT INTO ")
-	b.WriteString(d.QuoteIdent(n.table))
+	b.WriteString(qualifiedTable(d, schema, n.table))
 	b.WriteString(" (")
 	for i, c := range n.insertCols {
 		if i > 0 {
@@ -326,7 +329,7 @@ func (t *tracker[E]) buildPlan(p *flushPlan) error {
 func (t *tracker[E]) planDelete(p *flushPlan, e *E, pk any) {
 	m := t.meta
 	versioned := m.VersionCol != ""
-	sql := "DELETE FROM " + p.d.QuoteIdent(m.Table) + " WHERE " + p.d.QuoteIdent(m.PK) + " = " + p.d.Placeholder(1)
+	sql := "DELETE FROM " + qualifiedTable(p.d, p.schema, m.Table) + " WHERE " + p.d.QuoteIdent(m.PK) + " = " + p.d.Placeholder(1)
 	args := []any{pk}
 	if versioned {
 		sql += " AND " + p.d.QuoteIdent(m.VersionCol) + " = " + p.d.Placeholder(2)
@@ -347,7 +350,7 @@ func (t *tracker[E]) planUpdate(p *flushPlan, r *rec[E], idxs []int) {
 	versioned := m.VersionCol != ""
 	vals := m.ValuesFor(r.e, idxs)
 
-	sql := "UPDATE " + p.d.QuoteIdent(m.Table) + " SET "
+	sql := "UPDATE " + qualifiedTable(p.d, p.schema, m.Table) + " SET "
 	args := make([]any, 0, len(vals)+2)
 	for i, idx := range idxs {
 		if i > 0 {

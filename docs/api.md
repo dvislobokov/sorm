@@ -110,6 +110,14 @@ func (s Set[E]) Remove(entities ...*E)
 func (s Set[E]) Find(ctx, pk any) (*E, error) // identity map first, then SELECT
 ```
 
+### Schemas
+
+```go
+func InSchema(db DB, schema string) DB
+// every rendered table becomes schema-qualified ("billing"."orders");
+// Begin propagates the schema into transactions; models stay agnostic
+```
+
 ### Transactions
 
 ```go
@@ -278,6 +286,7 @@ func Apply(ctx, db *sql.DB, dialect string) error
 func Plan(ctx, db *sql.DB, dialect string) ([]string, error)
 
 // versioned files (dir + sorm_migrations history table)
+// Apply/Plan take ...Option; WithSchema(name) scopes inspection and diff
 func Diff(ctx, dev *sql.DB, dialect, dir, name string) (filename string, err error)
 func Up(ctx, db *sql.DB, dialect, dir string) (applied []string, err error)
 func Down(ctx, db *sql.DB, dialect, dir string, steps int) (reverted []string, err error)

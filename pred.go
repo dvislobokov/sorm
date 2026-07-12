@@ -165,11 +165,11 @@ func (n existsNode) writeSQL(w *sqlWriter) {
 		w.raw("NOT ")
 	}
 	w.raw("EXISTS (SELECT 1 FROM ")
-	w.ident(n.childTable)
+	w.table(n.childTable)
 	w.raw(" WHERE ")
 	w.col(colRef{n.childTable, n.fkCol})
 	w.raw(" = ")
-	w.ident(n.parentTable)
+	w.table(n.parentTable)
 	w.raw(".")
 	w.ident(n.parentPK)
 	for _, p := range n.preds {
@@ -223,11 +223,26 @@ type sqlWriter struct {
 	sb      strings.Builder
 	d       dialect.Dialect
 	args    []any
-	qualify bool // projection layer with JOINs: column names prefixed with the table
+	qualify bool   // projection layer with JOINs: column names prefixed with the table
+	schema  string // non-empty: table names render schema-qualified (InSchema)
 	err     error
 }
 
 func newSQLWriter(d dialect.Dialect) *sqlWriter { return &sqlWriter{d: d} }
+
+func newSchemaSQLWriter(d dialect.Dialect, schema string) *sqlWriter {
+	return &sqlWriter{d: d, schema: schema}
+}
+
+// table renders a table name, schema-qualified when the connection is
+// wrapped with InSchema: "billing"."orders".
+func (w *sqlWriter) table(name string) {
+	if w.schema != "" {
+		w.ident(w.schema)
+		w.raw(".")
+	}
+	w.ident(name)
+}
 
 // fail records a build error (e.g. a predicate unsupported on this dialect).
 // Executing methods surface it instead of sending broken SQL to the database.
@@ -242,7 +257,7 @@ func (w *sqlWriter) ident(s string) { w.sb.WriteString(w.d.QuoteIdent(s)) }
 
 func (w *sqlWriter) col(r colRef) {
 	if w.qualify && r.table != "" {
-		w.ident(r.table)
+		w.table(r.table)
 		w.raw(".")
 	}
 	w.ident(r.name)
@@ -251,4 +266,13 @@ func (w *sqlWriter) col(r colRef) {
 func (w *sqlWriter) arg(v any) {
 	w.args = append(w.args, v)
 	w.sb.WriteString(w.d.Placeholder(len(w.args)))
+}
+
+// qualifiedTable renders a table name with an optional schema prefix —
+// for SQL built outside a sqlWriter.
+func qualifiedTable(d dialect.Dialect, schema, table string) string {
+	if schema == "" {
+		return d.QuoteIdent(table)
+	}
+	return d.QuoteIdent(schema) + "." + d.QuoteIdent(table)
 }

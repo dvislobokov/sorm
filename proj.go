@@ -20,12 +20,13 @@ import (
 // From starts a projection query from the table of entity E.
 func From[E any](db DB) FromBuilder[E] {
 	m := metaFor[E]()
-	return FromBuilder[E]{db: db, d: dialectOf(db), table: m.Table}
+	return FromBuilder[E]{db: db, d: dialectOf(db), schema: schemaOf(db), table: m.Table}
 }
 
 type FromBuilder[E any] struct {
 	db     DB
 	d      dialect.Dialect
+	schema string
 	table  string
 	name   string
 	joins  []joinClause
@@ -326,7 +327,7 @@ func Project[R any, E any](q FromBuilder[E], exprs ...SelectExpr[E]) ProjQuery[R
 }
 
 func buildProjection[E any](q FromBuilder[E], exprs []SelectExpr[E]) (string, []any, error) {
-	w := newSQLWriter(q.d)
+	w := newSchemaSQLWriter(q.d, q.schema)
 	w.qualify = true
 
 	w.raw("SELECT ")
@@ -339,11 +340,11 @@ func buildProjection[E any](q FromBuilder[E], exprs []SelectExpr[E]) (string, []
 		w.ident(ex.alias)
 	}
 	w.raw(" FROM ")
-	w.ident(q.table)
+	w.table(q.table)
 
 	for _, j := range q.joins {
 		w.raw(" " + j.kind + " ")
-		w.ident(j.table)
+		w.table(j.table)
 		if len(j.on) > 0 {
 			w.raw(" ON ")
 			for i, n := range j.on {
