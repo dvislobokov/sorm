@@ -82,7 +82,7 @@ func (q UpdateBuilder[E]) ToSQL() (string, []any, error) {
 		w.raw(" WHERE ")
 		logicalNode{"AND", nodesOf(q.preds)}.writeSQL(w)
 	}
-	return w.sb.String(), w.args, nil
+	return w.sb.String(), w.args, w.err
 }
 
 func (q UpdateBuilder[E]) Exec(ctx context.Context) (int64, error) {
@@ -139,7 +139,7 @@ func (q DeleteBuilder[E]) ToSQL() (string, []any, error) {
 		w.raw(" WHERE ")
 		logicalNode{"AND", nodesOf(q.preds)}.writeSQL(w)
 	}
-	return w.sb.String(), w.args, nil
+	return w.sb.String(), w.args, w.err
 }
 
 func (q DeleteBuilder[E]) Exec(ctx context.Context) (int64, error) {

@@ -29,6 +29,13 @@ type Col[E, V]     // Eq, Neq, In, NotIn, IsNull, IsNotNull, Set, SetNull, Asc, 
 type OrdCol[E, V]  // + Gt, Gte, Lt, Lte, Between
 type StrCol[E]     // + Like, ILike, HasPrefix, HasSuffix, Contains
 type BytesCol[E]   // Eq, Neq, IsNull, IsNotNull, Set, SetNull
+type JSONCol[E]    // Path(p) JSONPath, Contains(v), HasKey(k), IsNull, IsNotNull, Set(any), SetNull
+type JSONPath[E]   // Eq, Neq, In, IsNull, IsNotNull (text extraction, dot notation)
+
+// JSON helpers used by generated code (available for custom tooling):
+func JSONValue(v any) driver.Valuer
+func JSONScan[T any](dst *T) sql.Scanner
+func JSONSnapshot(v any) []byte
 
 type Pred[E]   // a condition; a value
 type Order[E]  // a sort key

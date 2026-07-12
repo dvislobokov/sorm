@@ -53,6 +53,7 @@ Options are comma-separated inside one `sorm:"..."` tag.
 | `time.Time` | TIMESTAMPTZ | DATETIME(6) | DATETIME |
 | `[]byte` | BYTEA (nullable) | BLOB (nullable) | BLOB (nullable) |
 | `uuid.UUID`² | UUID | CHAR(36) | TEXT |
+| any type + `sorm:"json"`³ | JSONB | JSON | TEXT |
 
 ¹ MySQL cannot index unsized TEXT; use `type:text` when you need more than
 255 characters and don't index the column.
@@ -61,6 +62,13 @@ Options are comma-separated inside one `sorm:"..."` tag.
 mapped **by value** (no strings), work as primary keys (client-assigned —
 call `uuid.New()` before `Add`; `auto` does not apply), as foreign keys and
 as nullable `*uuid.UUID` columns.
+
+³ Any marshalable Go type (struct, map, slice) tagged `sorm:"json"` is
+stored as a JSON document and diffed by content in sessions. Nullability:
+a pointer struct, and any map/slice (nil ⇒ SQL NULL), are nullable; a plain
+struct is NOT NULL (its zero value marshals to a valid document). Use
+`type:json` to get plain `json` instead of `jsonb` on PostgreSQL. Content
+queries: see [JSON predicates](03-queries.md#json-predicates).
 
 **Nullability** is expressed with pointers: `*string`, `*time.Time`,
 `*int64`, `*uuid.UUID`, … The generated column descriptor still uses the

@@ -318,11 +318,14 @@ func Project[R any, E any](q FromBuilder[E], exprs ...SelectExpr[E]) ProjQuery[R
 		return ProjQuery[R]{err: &ScanError{Missing: missing, Extra: extra}}
 	}
 
-	sqlStr, args := buildProjection(q, exprs)
+	sqlStr, args, err := buildProjection(q, exprs)
+	if err != nil {
+		return ProjQuery[R]{err: err}
+	}
 	return ProjQuery[R]{db: q.db, sql: sqlStr, args: args, fieldIdx: fieldIdx, name: q.name}
 }
 
-func buildProjection[E any](q FromBuilder[E], exprs []SelectExpr[E]) (string, []any) {
+func buildProjection[E any](q FromBuilder[E], exprs []SelectExpr[E]) (string, []any, error) {
 	w := newSQLWriter(q.d)
 	w.qualify = true
 
@@ -386,7 +389,7 @@ func buildProjection[E any](q FromBuilder[E], exprs []SelectExpr[E]) (string, []
 	if q.offset != nil {
 		w.raw(" OFFSET " + strconv.Itoa(*q.offset))
 	}
-	return w.sb.String(), w.args
+	return w.sb.String(), w.args, w.err
 }
 
 type ProjQuery[R any] struct {

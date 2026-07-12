@@ -31,10 +31,20 @@ type User struct {
 }
 
 // Profile is the hasOne side: the FK lives on the child, the parent holds a pointer navigation.
+// It also carries the JSON columns: a typed struct (nullable) and a schemaless map.
 type Profile struct {
-	ID     int64  `sorm:"pk,auto"`
-	UserID int64  `sorm:"fk:User.ID,uniqueIndex:uq_profiles_user"`
+	ID     int64          `sorm:"pk,auto"`
+	UserID int64          `sorm:"fk:User.ID,uniqueIndex:uq_profiles_user"`
 	Bio    string
+	Prefs  *ProfilePrefs  `sorm:"json"` // nullable JSONB/JSON/TEXT
+	Meta   map[string]any `sorm:"json"`
+}
+
+// ProfilePrefs is a plain (non-entity) struct stored as a JSON document.
+type ProfilePrefs struct {
+	Theme  string `json:"theme"`
+	Limit  int    `json:"limit"`
+	Labels []string `json:"labels,omitempty"`
 }
 
 // Tag is a many2many side (the user_tags join table is generated implicitly).

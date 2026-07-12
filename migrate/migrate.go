@@ -240,6 +240,19 @@ func buildColumn(c sorm.ColumnDef, dialect string) (*schema.Column, error) {
 	case "bool":
 		col = newCol(c.Nullable, func() *schema.Column { return schema.NewBoolColumn(c.Name, typ) },
 			func() *schema.Column { return schema.NewNullBoolColumn(c.Name, typ) })
+	case "json":
+		if dialect == "sqlite" {
+			// SQLite stores JSON as TEXT; the string branch below handles it.
+			base, size := splitSized(typ)
+			var opts []schema.StringOption
+			if size > 0 {
+				opts = append(opts, schema.StringSize(size))
+			}
+			col = newCol(c.Nullable, func() *schema.Column { return schema.NewStringColumn(c.Name, base, opts...) },
+				func() *schema.Column { return schema.NewNullStringColumn(c.Name, base, opts...) })
+			break
+		}
+		col = schema.NewColumn(c.Name).SetType(&schema.JSONType{T: typ}).SetNull(c.Nullable)
 	case "uuid":
 		if dialect == "postgres" {
 			// PostgreSQL has a real uuid type; Atlas models it separately.

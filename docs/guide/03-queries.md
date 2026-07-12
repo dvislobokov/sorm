@@ -114,6 +114,51 @@ Safety rails:
 - On versioned entities, set-based updates automatically bump the
   `version` column, so open sessions still detect the conflict.
 
+## JSON predicates
+
+Columns tagged `sorm:"json"` get a `JSONCol` descriptor with content
+predicates that render per dialect:
+
+```go
+p := gen.Profile
+
+// Text extraction by dot-notation path:
+//   PG:     prefs #>> '{flags,beta}'
+//   MySQL:  JSON_UNQUOTE(JSON_EXTRACT(prefs, '$.flags.beta'))
+//   SQLite: json_extract(prefs, '$.flags.beta')
+q.Where(p.Prefs.Path("theme").Eq("dark"))
+q.Where(p.Meta.Path("flags.beta").In("on", "forced"))
+q.Where(p.Prefs.Path("theme").IsNull())      // absent or JSON null
+
+// Structural containment (PG @>, MySQL JSON_CONTAINS):
+q.Where(p.Meta.Contains(map[string]any{"tier": "pro"}))
+
+// Top-level key existence (works everywhere):
+q.Where(p.Meta.HasKey("tier"))
+
+// Whole-column NULL checks and set-based writes:
+q.Where(p.Prefs.IsNull())
+sorm.Update[models.Profile](db).Set(p.Meta.Set(map[string]any{...}))
+sorm.Update[models.Profile](db).Set(p.Prefs.SetNull())
+```
+
+| Predicate | PostgreSQL | MySQL | SQLite |
+|---|---|---|---|
+| `Path(...).Eq/Neq/In/IsNull` | ✅ | ✅ | ✅ |
+| `Contains(v)` | ✅ `@>` | ✅ `JSON_CONTAINS` | ❌ build error |
+| `HasKey(k)` | ✅ `jsonb_exists` | ✅ `JSON_CONTAINS_PATH` | ✅ `json_type` |
+
+Notes:
+
+- Path extraction compares **string values**: portable for strings; SQLite
+  returns booleans/numbers as native SQL values while PG/MySQL return text,
+  so compare string fields by path and use `Contains` for structured checks.
+- Path segments and keys must match `[A-Za-z0-9_]+`; anything else is a
+  build error returned when the query executes (never broken SQL).
+- A GIN index over a jsonb column is declared through the model's
+  [`Indexes()` method](02-schema.md#custom-indexes)
+  (`Type: "gin"`, `Parts: [{Expr: "..."}]`).
+
 ## Raw SQL
 
 When you need SQL that the builder does not speak, drop down without

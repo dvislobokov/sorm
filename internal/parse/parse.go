@@ -20,6 +20,7 @@ const (
 	KindOrd               // OrdCol: numbers, time.Time, named ordered types
 	KindStr               // StrCol: string
 	KindBytes             // BytesCol: []byte
+	KindJSON              // JSONCol: any marshalable type stored as JSON
 )
 
 type Schema struct {
@@ -202,6 +203,17 @@ func parseEntity(name string, st *types.Struct, modelsPkg *types.Package, entity
 			ent.Table = tbl
 		}
 
+		// A JSON column? Checked before navigation detection: a struct-typed
+		// field tagged sorm:"json" is a column, not a relation.
+		if opts.has("json") {
+			f, err := parseJSONColumn(fv, opts, qual)
+			if err != nil {
+				return nil, fmt.Errorf("field %s: %w", fv.Name(), err)
+			}
+			ent.Fields = append(ent.Fields, *f)
+			continue
+		}
+
 		// A navigation?
 		if rel, ok := parseRelation(fv, opts, modelsPkg, entityNames); ok {
 			if rel == nil {
@@ -286,6 +298,46 @@ func namedStructIn(t types.Type, pkg *types.Package) string {
 		return ""
 	}
 	return named.Obj().Name()
+}
+
+// parseJSONColumn handles `sorm:"json"` fields: any marshalable Go type
+// (struct, map, slice), nullable via a pointer. []byte is rejected —
+// ambiguous with the bytes column kind.
+func parseJSONColumn(fv *types.Var, opts tagOpts, qual types.Qualifier) (*Field, error) {
+	f := &Field{
+		GoName:    fv.Name(),
+		Col:       snake(fv.Name()),
+		Kind:      KindJSON,
+		BasicKind: "json",
+		Unique:    opts.has("unique"),
+	}
+	if opts.has("pk") || opts.has("version") {
+		return nil, fmt.Errorf("json column cannot be a pk or version field")
+	}
+	if col, ok := opts.value("col"); ok {
+		f.Col = col
+	}
+	if st, ok := opts.value("type"); ok {
+		f.SQLType = st
+	}
+
+	t := fv.Type()
+	if p, ok := t.(*types.Pointer); ok {
+		f.Nullable = true
+		t = p.Elem()
+	}
+	if isByteSlice(t) {
+		return nil, fmt.Errorf("[]byte cannot be a json column (store it as bytes, or use json.RawMessage semantics via a named type)")
+	}
+	// nil is the natural zero of maps and slices — such columns are nullable
+	// (nil ⇒ SQL NULL), like []byte. Non-pointer structs stay NOT NULL:
+	// their zero value marshals to a valid document.
+	switch t.Underlying().(type) {
+	case *types.Map, *types.Slice:
+		f.Nullable = true
+	}
+	f.TypeExpr = types.TypeString(t, qual)
+	return f, nil
 }
 
 func parseColumn(fv *types.Var, opts tagOpts, qual types.Qualifier) (*Field, error) {

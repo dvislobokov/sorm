@@ -1,6 +1,7 @@
 package sorm
 
 import (
+	"errors"
 	"strings"
 
 	"github.com/dvislobokov/sorm/dialect"
@@ -223,9 +224,18 @@ type sqlWriter struct {
 	d       dialect.Dialect
 	args    []any
 	qualify bool // projection layer with JOINs: column names prefixed with the table
+	err     error
 }
 
 func newSQLWriter(d dialect.Dialect) *sqlWriter { return &sqlWriter{d: d} }
+
+// fail records a build error (e.g. a predicate unsupported on this dialect).
+// Executing methods surface it instead of sending broken SQL to the database.
+func (w *sqlWriter) fail(msg string) {
+	if w.err == nil {
+		w.err = errors.New(msg)
+	}
+}
 
 func (w *sqlWriter) raw(s string)   { w.sb.WriteString(s) }
 func (w *sqlWriter) ident(s string) { w.sb.WriteString(w.d.QuoteIdent(s)) }

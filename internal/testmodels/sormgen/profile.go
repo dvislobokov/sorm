@@ -3,6 +3,8 @@
 package sormgen
 
 import (
+	"bytes"
+
 	"github.com/dvislobokov/sorm"
 
 	models "github.com/dvislobokov/sorm/internal/testmodels"
@@ -13,15 +15,21 @@ var Profile = struct {
 	ID     sorm.OrdCol[models.Profile, int64]
 	UserID sorm.OrdCol[models.Profile, int64]
 	Bio    sorm.StrCol[models.Profile]
+	Prefs  sorm.JSONCol[models.Profile]
+	Meta   sorm.JSONCol[models.Profile]
 }{
 	ID:     sorm.NewOrdCol[models.Profile, int64]("profiles", "id"),
 	UserID: sorm.NewOrdCol[models.Profile, int64]("profiles", "user_id"),
 	Bio:    sorm.NewStrCol[models.Profile]("profiles", "bio"),
+	Prefs:  sorm.NewJSONCol[models.Profile]("profiles", "prefs"),
+	Meta:   sorm.NewJSONCol[models.Profile]("profiles", "meta"),
 }
 
 type profileSnap struct {
 	fUserID int64
 	fBio    string
+	fPrefs  []byte
+	fMeta   []byte
 }
 
 func init() {
@@ -35,6 +43,8 @@ var profileTableDef = sorm.TableDef{
 		{Name: "id", GoKind: "int64", PK: true, Auto: true},
 		{Name: "user_id", GoKind: "int64", RefTable: "users", RefCol: "id"},
 		{Name: "bio", GoKind: "string"},
+		{Name: "prefs", GoKind: "json", Nullable: true},
+		{Name: "meta", GoKind: "json", Nullable: true},
 	},
 	Indexes: []sorm.IndexDef{
 		{Name: "uq_profiles_user", Columns: []string{"user_id"}, Unique: true},
@@ -45,13 +55,13 @@ var profileMeta = sorm.Meta[models.Profile]{
 	Table:      "profiles",
 	PK:         "id",
 	Auto:       true,
-	SelectCols: []string{"id", "user_id", "bio"},
-	InsertCols: []string{"user_id", "bio"},
+	SelectCols: []string{"id", "user_id", "bio", "prefs", "meta"},
+	InsertCols: []string{"user_id", "bio", "prefs", "meta"},
 	Scan: func(e *models.Profile) []any {
-		return []any{&e.ID, &e.UserID, &e.Bio}
+		return []any{&e.ID, &e.UserID, &e.Bio, sorm.JSONScan(&e.Prefs), sorm.JSONScan(&e.Meta)}
 	},
 	InsertValues: func(e *models.Profile) []any {
-		return []any{e.UserID, e.Bio}
+		return []any{e.UserID, e.Bio, sorm.JSONValue(e.Prefs), sorm.JSONValue(e.Meta)}
 	},
 	ValuesFor: func(e *models.Profile, cols []int) []any {
 		out := make([]any, len(cols))
@@ -63,6 +73,10 @@ var profileMeta = sorm.Meta[models.Profile]{
 				out[i] = e.UserID
 			case 2:
 				out[i] = e.Bio
+			case 3:
+				out[i] = sorm.JSONValue(e.Prefs)
+			case 4:
+				out[i] = sorm.JSONValue(e.Meta)
 			}
 		}
 		return out
@@ -71,6 +85,8 @@ var profileMeta = sorm.Meta[models.Profile]{
 		return profileSnap{
 			fUserID: e.UserID,
 			fBio:    e.Bio,
+			fPrefs:  sorm.JSONSnapshot(e.Prefs),
+			fMeta:   sorm.JSONSnapshot(e.Meta),
 		}
 	},
 	Diff: func(s any, e *models.Profile) []int {
@@ -81,6 +97,12 @@ var profileMeta = sorm.Meta[models.Profile]{
 		}
 		if snap.fBio != e.Bio {
 			ch = append(ch, 2)
+		}
+		if !bytes.Equal(snap.fPrefs, sorm.JSONSnapshot(e.Prefs)) {
+			ch = append(ch, 3)
+		}
+		if !bytes.Equal(snap.fMeta, sorm.JSONSnapshot(e.Meta)) {
+			ch = append(ch, 4)
 		}
 		return ch
 	},

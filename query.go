@@ -79,13 +79,17 @@ func (q QueryBuilder[E]) Offset(n int) QueryBuilder[E] {
 
 // ToSQL returns the final SQL and arguments — inspection instead of magic.
 func (q QueryBuilder[E]) ToSQL() (string, []any) {
-	return q.buildSelect(selectColumns(q.d, q.meta.SelectCols))
+	sqlStr, args, _ := q.buildSelect(selectColumns(q.d, q.meta.SelectCols))
+	return sqlStr, args
 }
 
 // All runs the query without tracking. An empty result is an empty slice, nil error.
 func (q QueryBuilder[E]) All(ctx context.Context) ([]*E, error) {
 	ctx = named(ctx, q.name)
-	sqlStr, args := q.ToSQL()
+	sqlStr, args, err := q.buildSelect(selectColumns(q.d, q.meta.SelectCols))
+	if err != nil {
+		return nil, err
+	}
 	rows, err := q.db.Query(ctx, sqlStr, args...)
 	if err != nil {
 		return nil, fmt.Errorf("sorm: select %s: %w", q.meta.Table, err)
@@ -140,7 +144,11 @@ func (q QueryBuilder[E]) Iter(ctx context.Context) iter.Seq2[*E, error] {
 			return
 		}
 		ctx := named(ctx, q.name)
-		sqlStr, args := q.ToSQL()
+		sqlStr, args, err := q.buildSelect(selectColumns(q.d, q.meta.SelectCols))
+		if err != nil {
+			yield(nil, err)
+			return
+		}
 		rows, err := q.db.Query(ctx, sqlStr, args...)
 		if err != nil {
 			yield(nil, fmt.Errorf("sorm: select %s: %w", q.meta.Table, err))
@@ -186,8 +194,10 @@ func (q QueryBuilder[E]) Count(ctx context.Context) (int64, error) {
 	base.orders = nil
 	base.limit = nil
 	base.offset = nil
-	sqlStr, args := base.buildSelect("count(*)")
-
+	sqlStr, args, err := base.buildSelect("count(*)")
+	if err != nil {
+		return 0, err
+	}
 	rows, err := q.db.Query(ctx, sqlStr, args...)
 	if err != nil {
 		return 0, fmt.Errorf("sorm: count %s: %w", q.meta.Table, err)
@@ -203,7 +213,7 @@ func (q QueryBuilder[E]) Count(ctx context.Context) (int64, error) {
 	return n, rows.Err()
 }
 
-func (q QueryBuilder[E]) buildSelect(selectList string) (string, []any) {
+func (q QueryBuilder[E]) buildSelect(selectList string) (string, []any, error) {
 	w := newSQLWriter(q.d)
 	w.raw("SELECT " + selectList + " FROM ")
 	w.ident(q.meta.Table)
@@ -230,7 +240,7 @@ func (q QueryBuilder[E]) buildSelect(selectList string) (string, []any) {
 	if q.offset != nil {
 		w.raw(" OFFSET " + strconv.Itoa(*q.offset))
 	}
-	return w.sb.String(), w.args
+	return w.sb.String(), w.args, w.err
 }
 
 func selectColumns(d dialect.Dialect, cols []string) string {
