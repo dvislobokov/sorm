@@ -6,12 +6,38 @@ package testmodels
 //go:generate go run github.com/dvislobokov/sorm/cmd/sorm gen .
 
 import (
+	"database/sql/driver"
+	"fmt"
 	"time"
 
 	"github.com/google/uuid"
 
 	"github.com/dvislobokov/sorm"
 )
+
+// Cents is a custom scalar (driver.Valuer + sql.Scanner): money in minor
+// units stored as BIGINT. Exercises KindScalar columns — the type is not
+// required to be Go-comparable; snapshots go through sorm.ScalarSnapshot.
+type Cents struct {
+	Units int64
+}
+
+func (c Cents) Value() (driver.Value, error) { return c.Units, nil }
+
+func (c *Cents) Scan(src any) error {
+	switch v := src.(type) {
+	case nil:
+		c.Units = 0
+	case int64:
+		c.Units = v
+	case []byte:
+		_, err := fmt.Sscan(string(v), &c.Units)
+		return err
+	default:
+		return fmt.Errorf("Cents: cannot scan %T", src)
+	}
+	return nil
+}
 
 type User struct {
 	ID        int64  `sorm:"pk,auto"`
@@ -104,6 +130,9 @@ type Device struct {
 	Owner   *User     `sorm:"belongsTo:OwnerID"`
 	Token   *uuid.UUID
 	Name    string
+	// Price exercises a custom Valuer/Scanner scalar; the SQL type is
+	// mandatory for scalars (not statically derivable).
+	Price Cents `sorm:"type:bigint"`
 }
 
 // Comment is the nullable-FK side: PostID may be NULL (a detached comment).

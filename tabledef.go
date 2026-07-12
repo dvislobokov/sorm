@@ -126,6 +126,10 @@ func SQLTypeFor(dialect string, c ColumnDef) string {
 }
 
 func pgTypeOf(c ColumnDef) string {
+	// Native arrays: GoKind "array:<elem>" → "<elem type>[]".
+	if elem, ok := strings.CutPrefix(c.GoKind, "array:"); ok {
+		return pgTypeOf(ColumnDef{GoKind: elem}) + "[]"
+	}
 	switch c.GoKind {
 	case "json":
 		return "JSONB"

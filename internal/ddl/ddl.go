@@ -83,6 +83,9 @@ func Generate(s *parse.Schema, dialect string) (string, error) {
 		var lines []string
 		pkCols := compositePK(def)
 		for _, c := range def.Columns {
+			if strings.HasPrefix(c.GoKind, "array:") && dialect != "postgres" {
+				return "", fmt.Errorf("%s.%s: array columns are only supported on postgres (use sorm:\"json\" for a portable list)", def.Name, c.Name)
+			}
 			lines = append(lines, "  "+columnDDL(c, dialect, q, len(pkCols) > 1))
 		}
 		if len(pkCols) > 1 {

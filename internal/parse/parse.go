@@ -17,11 +17,13 @@ import (
 type Kind int
 
 const (
-	KindEq    Kind = iota // Col: bool and other equality-only types
-	KindOrd               // OrdCol: numbers, time.Time, named ordered types
-	KindStr               // StrCol: string
-	KindBytes             // BytesCol: []byte
-	KindJSON              // JSONCol: any marshalable type stored as JSON
+	KindEq     Kind = iota // Col: bool and other equality-only types
+	KindOrd                // OrdCol: numbers, time.Time, named ordered types
+	KindStr                // StrCol: string
+	KindBytes              // BytesCol: []byte
+	KindJSON               // JSONCol: any marshalable type stored as JSON
+	KindScalar             // ScalarCol: named type implementing driver.Valuer + sql.Scanner
+	KindArray              // ArrayCol: []T with sorm:"array" — native PostgreSQL array
 )
 
 type Schema struct {
@@ -79,6 +81,11 @@ type Field struct {
 	// JSONDoc — the field tree of a struct-typed json column (nil for
 	// maps/slices/unknown shapes); drives typed accessor generation.
 	JSONDoc []JSONField
+	// ImportPath — package of a KindScalar type living outside the models
+	// package (e.g. github.com/shopspring/decimal); "" otherwise.
+	ImportPath string
+	// ElemExpr — element type of a KindArray column ("string", "int64", ...).
+	ElemExpr string
 }
 
 // JSONField — one field of a JSON document (for typed accessors).
@@ -492,6 +499,10 @@ func parseColumn(fv *types.Var, opts tagOpts, qual types.Qualifier, naming strin
 		t = p.Elem()
 	}
 
+	if opts.has("array") {
+		return parseArrayColumn(f, t, qual)
+	}
+
 	switch {
 	case isByteSlice(t):
 		if f.Nullable {
@@ -508,6 +519,9 @@ func parseColumn(fv *types.Var, opts tagOpts, qual types.Qualifier, naming strin
 	default:
 		basic, ok := t.Underlying().(*types.Basic)
 		if !ok {
+			if scalarColumn(t) {
+				return parseScalarColumn(f, t, qual)
+			}
 			return nil, fmt.Errorf("unsupported column type %s (sql.Null* is not supported — use a pointer)", t)
 		}
 		f.TypeExpr = types.TypeString(t, qual)
@@ -532,6 +546,85 @@ func parseColumn(fv *types.Var, opts tagOpts, qual types.Qualifier, naming strin
 		return nil, fmt.Errorf("autoCreate/autoUpdate requires a plain time.Time field")
 	}
 	return f, nil
+}
+
+// parseArrayColumn handles `sorm:"array"`: []T of a basic element, stored
+// as a native PostgreSQL array (text[], bigint[], ...). Other dialects
+// reject the column at DDL/migration time. A nil slice maps to SQL NULL.
+func parseArrayColumn(f *Field, t types.Type, qual types.Qualifier) (*Field, error) {
+	if f.Nullable {
+		return nil, fmt.Errorf("*[]T is not supported for array columns; a nil slice is already NULL")
+	}
+	if f.PK || f.Version || f.AutoCreate || f.AutoUpdate {
+		return nil, fmt.Errorf("array column cannot be pk/version/auto-timestamp")
+	}
+	sl, ok := t.Underlying().(*types.Slice)
+	if !ok {
+		return nil, fmt.Errorf("sorm:\"array\" requires a slice type, got %s", t)
+	}
+	elemBasic, ok := sl.Elem().Underlying().(*types.Basic)
+	if !ok {
+		return nil, fmt.Errorf("array element must be a basic type, got %s", sl.Elem())
+	}
+	switch elemBasic.Name() {
+	case "string", "int64", "int32", "int", "float64", "bool":
+	default:
+		return nil, fmt.Errorf("unsupported array element type %s (string|int64|int32|int|float64|bool)", elemBasic.Name())
+	}
+	f.Kind = KindArray
+	f.Nullable = true // nil slice ⇒ NULL
+	f.TypeExpr = types.TypeString(t, qual)
+	f.ElemExpr = types.TypeString(sl.Elem(), qual)
+	f.BasicKind = "array:" + elemBasic.Name()
+	return f, nil
+}
+
+// parseScalarColumn accepts a custom scalar: a named type implementing
+// driver.Valuer + sql.Scanner (decimal.Decimal, money types, encrypted
+// strings). The SQL type is not statically derivable — the type: tag is
+// required. NULL is the type's own job (e.g. decimal.NullDecimal):
+// pointer scalars are rejected because **T cannot be a Scan target.
+func parseScalarColumn(f *Field, t types.Type, qual types.Qualifier) (*Field, error) {
+	if f.Nullable {
+		return nil, fmt.Errorf("pointer to a Valuer/Scanner type is not supported — handle NULL inside the type (e.g. decimal.NullDecimal)")
+	}
+	if f.PK || f.Version || f.FK != "" {
+		return nil, fmt.Errorf("a Valuer/Scanner scalar cannot be a pk, version or fk column")
+	}
+	if f.SQLType == "" {
+		return nil, fmt.Errorf("a Valuer/Scanner scalar requires an explicit SQL type: add sorm:\"type:numeric(20,8)\" (or similar)")
+	}
+	f.Kind = KindScalar
+	f.BasicKind = "scalar"
+	f.TypeExpr = types.TypeString(t, qual)
+	if pkg := t.(*types.Named).Obj().Pkg(); pkg != nil && qual(pkg) != "models" {
+		f.ImportPath = pkg.Path()
+	}
+	return f, nil
+}
+
+// scalarColumn reports whether the named type implements driver.Valuer
+// (value receiver) and sql.Scanner (pointer receiver) — matched
+// structurally: Value() with 0 params / 2 results, Scan with 1/1.
+func scalarColumn(t types.Type) bool {
+	named, ok := t.(*types.Named)
+	if !ok {
+		return false
+	}
+	var hasValue, hasScan bool
+	// Methods of *T cover both receiver kinds.
+	ms := types.NewMethodSet(types.NewPointer(named))
+	for i := 0; i < ms.Len(); i++ {
+		m := ms.At(i).Obj().(*types.Func)
+		sig := m.Type().(*types.Signature)
+		switch {
+		case m.Name() == "Value" && sig.Params().Len() == 0 && sig.Results().Len() == 2:
+			hasValue = true
+		case m.Name() == "Scan" && sig.Params().Len() == 1 && sig.Results().Len() == 1:
+			hasScan = true
+		}
+	}
+	return hasValue && hasScan
 }
 
 func validateRelations(s *Schema) error {

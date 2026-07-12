@@ -6,6 +6,8 @@ package codegen
 import (
 	"fmt"
 	"go/format"
+	"maps"
+	"slices"
 	"strings"
 
 	"github.com/dvislobokov/sorm"
@@ -135,6 +137,7 @@ func genEntity(s *parse.Schema, e parse.Entity) ([]byte, error) {
 	lname := lowerFirst(e.Name)
 
 	needsTime, needsBytes, needsSlices, needsUUID := false, false, false, false
+	extraImports := map[string]bool{}
 	for _, f := range e.Fields {
 		if f.IsTime {
 			needsTime = true
@@ -147,6 +150,12 @@ func genEntity(s *parse.Schema, e parse.Entity) ([]byte, error) {
 		}
 		if f.Kind == parse.KindJSON {
 			needsBytes = true // json snapshots diff with bytes.Equal
+		}
+		if f.Kind == parse.KindArray {
+			needsSlices = true // array snapshots clone and diff via slices
+		}
+		if f.ImportPath != "" {
+			extraImports[f.ImportPath] = true
 		}
 	}
 
@@ -163,6 +172,9 @@ func genEntity(s *parse.Schema, e parse.Entity) ([]byte, error) {
 	g.pf("\n\t\"github.com/dvislobokov/sorm\"\n")
 	if needsUUID {
 		g.pf("\t\"github.com/google/uuid\"\n")
+	}
+	for _, path := range slices.Sorted(maps.Keys(extraImports)) {
+		g.pf("\t%q\n", path)
 	}
 	g.pf("\n\tmodels %q\n)\n\n", s.PkgPath)
 
@@ -518,6 +530,10 @@ func descType(entT string, f parse.Field) string {
 	switch f.Kind {
 	case parse.KindJSON:
 		return fmt.Sprintf("sorm.JSONCol[%s]", entT)
+	case parse.KindScalar:
+		return fmt.Sprintf("sorm.ScalarCol[%s, %s]", entT, f.TypeExpr)
+	case parse.KindArray:
+		return fmt.Sprintf("sorm.ArrayCol[%s, %s]", entT, f.ElemExpr)
 	case parse.KindBytes:
 		return fmt.Sprintf("sorm.BytesCol[%s]", entT)
 	case parse.KindStr:
@@ -533,6 +549,10 @@ func descCtor(entT string, f parse.Field) string {
 	switch f.Kind {
 	case parse.KindJSON:
 		return fmt.Sprintf("sorm.NewJSONCol[%s]", entT)
+	case parse.KindScalar:
+		return fmt.Sprintf("sorm.NewScalarCol[%s, %s]", entT, f.TypeExpr)
+	case parse.KindArray:
+		return fmt.Sprintf("sorm.NewArrayCol[%s, %s]", entT, f.ElemExpr)
 	case parse.KindBytes:
 		return fmt.Sprintf("sorm.NewBytesCol[%s]", entT)
 	case parse.KindStr:
@@ -550,6 +570,12 @@ func snapType(f parse.Field) string {
 	if f.Kind == parse.KindJSON {
 		return "[]byte" // marshaled form; diffed with bytes.Equal
 	}
+	if f.Kind == parse.KindScalar {
+		return "any" // normalized driver.Value; see sorm.ScalarSnapshot
+	}
+	if f.Kind == parse.KindArray {
+		return f.TypeExpr // []T; nullable via nil, diffed with slices.Equal
+	}
 	t := f.TypeExpr
 	if f.Nullable {
 		t = "*" + t
@@ -564,6 +590,10 @@ func snapExpr(f parse.Field) string {
 	switch {
 	case f.Kind == parse.KindJSON:
 		return "sorm.JSONSnapshot(" + src + ")"
+	case f.Kind == parse.KindScalar:
+		return "sorm.ScalarSnapshot(" + src + ")"
+	case f.Kind == parse.KindArray:
+		return "slices.Clone(" + src + ")"
 	case f.IsBytes:
 		return "slices.Clone(" + src + ")"
 	case f.IsTime && f.Nullable:
@@ -584,6 +614,10 @@ func diffCond(f parse.Field) string {
 	switch {
 	case f.Kind == parse.KindJSON:
 		return fmt.Sprintf("!bytes.Equal(%s, sorm.JSONSnapshot(%s))", snap, cur)
+	case f.Kind == parse.KindScalar:
+		return fmt.Sprintf("%s != sorm.ScalarSnapshot(%s)", snap, cur)
+	case f.Kind == parse.KindArray:
+		return fmt.Sprintf("!slices.Equal(%s, %s)", snap, cur)
 	case f.IsBytes:
 		return fmt.Sprintf("!bytes.Equal(%s, %s)", snap, cur)
 	case f.IsTime && f.Nullable:

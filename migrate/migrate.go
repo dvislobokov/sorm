@@ -235,6 +235,13 @@ func buildColumn(c sorm.ColumnDef, dialect string) (*schema.Column, error) {
 	// Atlas type parsers expect lower case ("varchar(36)", not "VARCHAR(36)").
 	typ := strings.ToLower(sorm.SQLTypeFor(dialect, c))
 
+	if strings.HasPrefix(c.GoKind, "array:") {
+		if dialect != "postgres" {
+			return nil, fmt.Errorf("%s: array columns are only supported on postgres (use sorm:\"json\" for a portable list)", c.Name)
+		}
+		return schema.NewColumn(c.Name).SetType(&postgres.ArrayType{T: typ}).SetNull(c.Nullable), nil
+	}
+
 	var col *schema.Column
 	switch c.GoKind {
 	case "bool":

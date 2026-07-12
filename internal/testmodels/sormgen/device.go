@@ -15,12 +15,14 @@ var Device = struct {
 	OwnerID sorm.OrdCol[models.Device, int64]
 	Token   sorm.Col[models.Device, uuid.UUID]
 	Name    sorm.StrCol[models.Device]
+	Price   sorm.ScalarCol[models.Device, models.Cents]
 	Owner   sorm.BelongsTo[models.Device, models.User]
 }{
 	ID:      sorm.NewCol[models.Device, uuid.UUID]("devices", "id"),
 	OwnerID: sorm.NewOrdCol[models.Device, int64]("devices", "owner_id"),
 	Token:   sorm.NewCol[models.Device, uuid.UUID]("devices", "token"),
 	Name:    sorm.NewStrCol[models.Device]("devices", "name"),
+	Price:   sorm.NewScalarCol[models.Device, models.Cents]("devices", "price"),
 	Owner: sorm.NewBelongsTo[models.Device, models.User](
 		"owner_id",
 		func(c *models.Device) any { return c.OwnerID },
@@ -32,6 +34,7 @@ type deviceSnap struct {
 	fOwnerID int64
 	fToken   *uuid.UUID
 	fName    string
+	fPrice   any
 }
 
 func init() {
@@ -46,19 +49,20 @@ var deviceTableDef = sorm.TableDef{
 		{Name: "owner_id", GoKind: "int64", RefTable: "users", RefCol: "id"},
 		{Name: "token", GoKind: "uuid", Nullable: true},
 		{Name: "name", GoKind: "string"},
+		{Name: "price", GoKind: "scalar", SQLType: "bigint"},
 	},
 }
 
 var deviceMeta = sorm.Meta[models.Device]{
 	Table:      "devices",
 	PK:         "id",
-	SelectCols: []string{"id", "owner_id", "token", "name"},
-	InsertCols: []string{"id", "owner_id", "token", "name"},
+	SelectCols: []string{"id", "owner_id", "token", "name", "price"},
+	InsertCols: []string{"id", "owner_id", "token", "name", "price"},
 	Scan: func(e *models.Device) []any {
-		return []any{&e.ID, &e.OwnerID, &e.Token, &e.Name}
+		return []any{&e.ID, &e.OwnerID, &e.Token, &e.Name, &e.Price}
 	},
 	InsertValues: func(e *models.Device) []any {
-		return []any{e.ID, e.OwnerID, e.Token, e.Name}
+		return []any{e.ID, e.OwnerID, e.Token, e.Name, e.Price}
 	},
 	ValuesFor: func(e *models.Device, cols []int) []any {
 		out := make([]any, len(cols))
@@ -72,6 +76,8 @@ var deviceMeta = sorm.Meta[models.Device]{
 				out[i] = e.Token
 			case 3:
 				out[i] = e.Name
+			case 4:
+				out[i] = e.Price
 			}
 		}
 		return out
@@ -81,6 +87,7 @@ var deviceMeta = sorm.Meta[models.Device]{
 			fOwnerID: e.OwnerID,
 			fToken:   sorm.ClonePtr(e.Token),
 			fName:    e.Name,
+			fPrice:   sorm.ScalarSnapshot(e.Price),
 		}
 	},
 	Diff: func(s any, e *models.Device) []int {
@@ -94,6 +101,9 @@ var deviceMeta = sorm.Meta[models.Device]{
 		}
 		if snap.fName != e.Name {
 			ch = append(ch, 3)
+		}
+		if snap.fPrice != sorm.ScalarSnapshot(e.Price) {
+			ch = append(ch, 4)
 		}
 		return ch
 	},

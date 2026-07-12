@@ -73,6 +73,8 @@ Options are comma-separated inside one `sorm:"..."` tag.
 | `[]byte` | BYTEA (nullable) | BLOB (nullable) | BLOB (nullable) |
 | `uuid.UUID`² | UUID | CHAR(36) | TEXT |
 | any type + `sorm:"json"`³ | JSONB | JSON | TEXT |
+| Valuer/Scanner type⁴ | from `type:` | from `type:` | from `type:` |
+| `[]T` + `sorm:"array"`⁵ | T[] | — | — |
 
 ¹ MySQL cannot index unsized TEXT; use `type:text` when you need more than
 255 characters and don't index the column.
@@ -88,6 +90,22 @@ a pointer struct, and any map/slice (nil ⇒ SQL NULL), are nullable; a plain
 struct is NOT NULL (its zero value marshals to a valid document). Use
 `type:json` to get plain `json` instead of `jsonb` on PostgreSQL. Content
 queries: see [JSON predicates](03-queries.md#json-predicates).
+
+⁴ A named type implementing `driver.Valuer` **and** `sql.Scanner`
+(`decimal.Decimal`, money types, encrypted strings) is a custom scalar.
+The SQL type cannot be derived statically, so `type:` is **required**:
+`Price decimal.Decimal `sorm:"type:numeric(20,8)"``. The descriptor is
+`ScalarCol` — full Eq/Neq/Gt/…/In/Set API; comparisons happen in SQL, so
+the Go type does not have to be comparable. Handle NULL inside the type
+(e.g. `decimal.NullDecimal`) — pointer scalars are rejected.
+
+⁵ `[]string`, `[]int64/int32/int`, `[]float64`, `[]bool` tagged
+`sorm:"array"` map to a **native PostgreSQL array** (`text[]`, `bigint[]`,
+…); a nil slice is SQL NULL. Predicates: `Contains(vs...)` (`@>`),
+`Overlaps(vs...)` (`&&`), `Has(v)`, `IsNull`. On MySQL/SQLite the DDL
+generator and migrations reject the column, and array predicates return a
+build error — use `sorm:"json"` for a portable list. Arrays require the
+pgx driver (`pgxd`).
 
 **Nullability** is expressed with pointers: `*string`, `*time.Time`,
 `*int64`, `*uuid.UUID`, … The generated column descriptor still uses the
