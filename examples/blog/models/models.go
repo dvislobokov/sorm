@@ -1,5 +1,5 @@
-// Package models — схема примера: авторы и статьи.
-// После изменения схемы: go generate ./...
+// Package models — the example schema: authors and articles.
+// After changing the schema: go generate ./...
 package models
 
 //go:generate go run github.com/dvislobokov/sorm/cmd/sorm gen .

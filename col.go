@@ -2,26 +2,26 @@ package sorm
 
 import "strings"
 
-// colRef — ссылка на колонку; таблица используется только в квалифицированном
-// режиме (проекционный слой с JOIN), энтити-запросы пишут голое имя.
+// colRef is a column reference; the table is used only in qualified mode
+// (the projection layer with JOINs), entity queries emit the bare name.
 type colRef struct{ table, name string }
 
-// Col — дескриптор колонки со сравнениями на равенство. Тип дескриптора
-// (Col/OrdCol/StrCol/BytesCol) выбирает генератор по Go-типу поля.
-// Для nullable-полей (*string и т.п.) дескриптор генерируется по base-типу
-// плюс IsNull/IsNotNull — предикаты не требуют указателей.
+// Col is a column descriptor with equality comparisons. The descriptor type
+// (Col/OrdCol/StrCol/BytesCol) is chosen by the generator based on the field's Go type.
+// For nullable fields (*string etc.) the descriptor is generated for the base type
+// plus IsNull/IsNotNull — predicates do not require pointers.
 //
-// Eq(false) и Eq(0) — полноценные условия: предикаты не знают понятия zero-value.
+// Eq(false) and Eq(0) are full-fledged conditions: predicates have no notion of a zero value.
 type Col[E any, V comparable] struct{ ref colRef }
 
 func NewCol[E any, V comparable](table, name string) Col[E, V] {
 	return Col[E, V]{colRef{table, name}}
 }
 
-// ColName — имя колонки в БД.
+// ColName is the column name in the database.
 func (c Col[E, V]) ColName() string { return c.ref.name }
 
-// colTable + entityMark + valueMark — реализация ColOf[E]/ColOfV[E, V].
+// colTable + entityMark + valueMark implement ColOf[E]/ColOfV[E, V].
 func (c Col[E, V]) colTable() string { return c.ref.table }
 func (c Col[E, V]) entityMark(*E)    {}
 func (c Col[E, V]) valueMark(V)      {}
@@ -35,43 +35,43 @@ func (c Col[E, V]) NotIn(vs ...V) Pred[E] { return pred[E](inNode{c.ref, box(vs)
 func (c Col[E, V]) IsNull() Pred[E]    { return pred[E](nullNode{c.ref, false}) }
 func (c Col[E, V]) IsNotNull() Pred[E] { return pred[E](nullNode{c.ref, true}) }
 
-// Set — типизированное присваивание для set-based Update.
+// Set is a typed assignment for set-based Update.
 func (c Col[E, V]) Set(v V) Assign[E] { return Assign[E]{col: c.ref.name, val: v} }
 
 func (c Col[E, V]) Asc() Order[E]  { return Order[E]{ref: c.ref} }
 func (c Col[E, V]) Desc() Order[E] { return Order[E]{ref: c.ref, desc: true} }
 
-// AnyCol — колонка любой сущности. Используется в проекциях после JOIN
-// («ослабленный режим»): принадлежность таблицы FROM/JOIN-набору
-// валидируется при построении запроса.
+// AnyCol is a column of any entity. Used in projections after a JOIN
+// ("relaxed mode"): table membership in the FROM/JOIN set is validated
+// when the query is built.
 type AnyCol interface {
 	ColName() string
 	colTable() string
 }
 
-// ColV — колонка любой сущности с известным типом значения
-// (агрегаты и ColEq сохраняют типизацию по V).
+// ColV is a column of any entity with a known value type
+// (aggregates and ColEq stay typed over V).
 type ColV[V comparable] interface {
 	AnyCol
 	valueMark(V)
 }
 
-// ColOf — дескриптор колонки именно сущности E (для Field/GroupBy корневой
-// таблицы — с выводом типов).
+// ColOf is a column descriptor of exactly entity E (for Field/GroupBy on the
+// root table — with type inference).
 type ColOf[E any] interface {
 	AnyCol
 	entityMark(*E)
 }
 
-// ColOfV — дескриптор колонки E с типом значения (для типобезопасного ColEq).
+// ColOfV is a column descriptor of E with a value type (for type-safe ColEq).
 type ColOfV[E any, V comparable] interface {
 	ColOf[E]
 	valueMark(V)
 }
 
-// OrdCol добавляет упорядоченные сравнения. Ограничение — comparable, а не
-// cmp.Ordered: time.Time упорядочен в SQL, но не Ordered в Go; корректность
-// выбора гарантирует генератор (OrdCol только для чисел, строк и time.Time).
+// OrdCol adds ordered comparisons. The constraint is comparable, not
+// cmp.Ordered: time.Time is ordered in SQL but not Ordered in Go; the generator
+// guarantees correct selection (OrdCol only for numbers, strings, and time.Time).
 type OrdCol[E any, V comparable] struct{ Col[E, V] }
 
 func NewOrdCol[E any, V comparable](table, name string) OrdCol[E, V] {
@@ -87,8 +87,8 @@ func (c OrdCol[E, V]) Between(lo, hi V) Pred[E] {
 	return pred[E](betweenNode{c.ref, lo, hi})
 }
 
-// StrCol добавляет строковые предикаты. Аргументы HasPrefix/HasSuffix/Contains —
-// литералы, спецсимволы LIKE экранируются; Like/ILike принимают готовый шаблон.
+// StrCol adds string predicates. HasPrefix/HasSuffix/Contains arguments are
+// literals, LIKE special characters are escaped; Like/ILike take a ready-made pattern.
 type StrCol[E any] struct{ OrdCol[E, string] }
 
 func NewStrCol[E any](table, name string) StrCol[E] {
@@ -110,8 +110,8 @@ func (c StrCol[E]) Contains(s string) Pred[E] {
 	return pred[E](cmpNode{c.ref, "LIKE", "%" + escapeLike(s) + "%"})
 }
 
-// BytesCol — []byte не comparable, поэтому отдельный дескриптор без In
-// (SQL `= $1` по bytea допустим, IN по семантике не нужен).
+// BytesCol: []byte is not comparable, hence a separate descriptor without In
+// (SQL `= $1` on bytea is valid; IN is semantically unnecessary).
 type BytesCol[E any] struct{ ref colRef }
 
 func NewBytesCol[E any](table, name string) BytesCol[E] {
@@ -129,13 +129,13 @@ func (c BytesCol[E]) IsNotNull() Pred[E]   { return pred[E](nullNode{c.ref, true
 
 func (c BytesCol[E]) Set(v []byte) Assign[E] { return Assign[E]{col: c.ref.name, val: v} }
 
-// Order — элемент сортировки, замкнутый по сущности.
+// Order is a sort element, closed over the entity.
 type Order[E any] struct {
 	ref  colRef
 	desc bool
 }
 
-// Assign — типизированное присваивание колонки (Update.Set, будущий INSERT DSL).
+// Assign is a typed column assignment (Update.Set, future INSERT DSL).
 type Assign[E any] struct {
 	col string
 	val any

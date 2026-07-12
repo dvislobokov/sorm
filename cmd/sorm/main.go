@@ -1,14 +1,14 @@
-// Команда sorm — CLI генератора и миграций.
+// Command sorm is the code generator and migration CLI.
 //
-//	sorm gen [каталог моделей]                       кодоген sormgen
-//	sorm schema -dialect <d> [-out file] [каталог]   каноническая DDL-схема
-//	sorm migrate diff <имя> [флаги] [каталог]        сгенерировать версионную миграцию
-//	sorm migrate up -dsn <dsn> [флаги]               применить версионные миграции
+//	sorm gen [models dir]                            generate the sormgen package
+//	sorm schema -dialect <d> [-out file] [dir]       canonical DDL schema
+//	sorm migrate diff <name> [flags] [dir]           generate a versioned migration
+//	sorm migrate up -dsn <dsn> [flags]               apply versioned migrations
 //
-// Внешних инструментов не требуется: движок диффа (ariga.io/atlas SDK)
-// встроен. Для diff на PostgreSQL/MySQL нужна пустая scratch-БД —
-// пользователь поднимает её сам и передаёт -dev-dsn; для SQLite scratch
-// по умолчанию in-memory и ничего поднимать не нужно.
+// No external tools are required: the diff engine (ariga.io/atlas SDK)
+// is built in. Diff on PostgreSQL/MySQL needs an empty scratch database —
+// the user provisions it and passes -dev-dsn; for SQLite the scratch DB
+// is in-memory by default, so nothing needs to be set up.
 package main
 
 import (
@@ -67,7 +67,7 @@ func usage() {
   sorm schema -dialect postgres|mysql|sqlite [-out schema.sql] [models dir]
   sorm migrate diff [-dialect postgres] [-dir migrations] [-dev-dsn DSN] <name> [models dir]
   sorm migrate up -dsn DSN [-dialect postgres] [-dir migrations]
-(флаги — до позиционных аргументов)`)
+(flags go before positional arguments)`)
 	os.Exit(2)
 }
 
@@ -106,7 +106,7 @@ func runGen(dir string) error {
 func runSchema(args []string) error {
 	fs := flag.NewFlagSet("schema", flag.ExitOnError)
 	dialect := fs.String("dialect", "postgres", "postgres|mysql|sqlite")
-	out := fs.String("out", "", "файл вывода (по умолчанию stdout)")
+	out := fs.String("out", "", "output file (default stdout)")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -134,15 +134,15 @@ func runSchema(args []string) error {
 	return nil
 }
 
-// driverNames: диалект → имя драйвера database/sql.
+// driverNames: dialect → database/sql driver name.
 var driverNames = map[string]string{
 	"postgres": "pgx",
 	"mysql":    "mysql",
 	"sqlite":   "sqlite",
 }
 
-// registerModels загружает пакет моделей и регистрирует TableDef'ы —
-// после этого sorm/migrate видит желаемую схему без импорта sormgen.
+// registerModels loads the models package and registers TableDefs —
+// after that sorm/migrate sees the desired schema without importing sormgen.
 func registerModels(modelsDir string) error {
 	schema, err := parse.Load(modelsDir)
 	if err != nil {
@@ -155,8 +155,8 @@ func registerModels(modelsDir string) error {
 		}
 		if e.HasIndexesMethod {
 			fmt.Fprintf(os.Stderr,
-				"sorm: ВНИМАНИЕ: %s определяет кастомные Indexes() — CLI не исполняет код моделей и не увидит их.\n"+
-					"       Для полной схемы используйте sorm/migrate из кода (Diff/Apply с импортом sormgen).\n", e.Name)
+				"sorm: WARNING: %s defines custom Indexes() — the CLI does not execute model code and will not see them.\n"+
+					"       For the full schema use sorm/migrate from code (Diff/Apply importing sormgen).\n", e.Name)
 		}
 		sorm.RegisterTable(def)
 	}
@@ -181,13 +181,13 @@ func openDB(dialect, dsn string) (*sql.DB, error) {
 func runMigrateDiff(args []string) error {
 	fs := flag.NewFlagSet("migrate diff", flag.ExitOnError)
 	dialect := fs.String("dialect", "postgres", "postgres|mysql|sqlite")
-	dir := fs.String("dir", "migrations", "каталог версионных миграций")
-	devDSN := fs.String("dev-dsn", "", "DSN пустой scratch-БД для replay (sqlite: по умолчанию in-memory)")
+	dir := fs.String("dir", "migrations", "versioned migrations directory")
+	devDSN := fs.String("dev-dsn", "", "DSN of an empty scratch DB for replay (sqlite: in-memory by default)")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 	if fs.NArg() < 1 {
-		return fmt.Errorf("migrate diff: не задано имя миграции")
+		return fmt.Errorf("migrate diff: migration name is required")
 	}
 	name := fs.Arg(0)
 	modelsDir := "."
@@ -198,7 +198,7 @@ func runMigrateDiff(args []string) error {
 	dsn := *devDSN
 	if dsn == "" {
 		if *dialect != "sqlite" {
-			return fmt.Errorf("migrate diff: для %s нужна пустая scratch-БД — поднимите её сами и передайте -dev-dsn", *dialect)
+			return fmt.Errorf("migrate diff: %s needs an empty scratch DB — provision it yourself and pass -dev-dsn", *dialect)
 		}
 		dsn = ":memory:"
 	}
@@ -220,23 +220,23 @@ func runMigrateDiff(args []string) error {
 		return err
 	}
 	if fname == "" {
-		fmt.Println("sorm: изменений нет — миграция не создана")
+		fmt.Println("sorm: no changes — migration not created")
 		return nil
 	}
-	fmt.Printf("sorm: создана миграция %s\n", filepath.Join(*dir, fname))
+	fmt.Printf("sorm: created migration %s\n", filepath.Join(*dir, fname))
 	return nil
 }
 
 func runMigrateUp(args []string) error {
 	fs := flag.NewFlagSet("migrate up", flag.ExitOnError)
 	dialect := fs.String("dialect", "postgres", "postgres|mysql|sqlite")
-	dir := fs.String("dir", "migrations", "каталог версионных миграций")
-	dsn := fs.String("dsn", "", "DSN целевой БД (обязательно)")
+	dir := fs.String("dir", "migrations", "versioned migrations directory")
+	dsn := fs.String("dsn", "", "target database DSN (required)")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 	if *dsn == "" {
-		return fmt.Errorf("migrate up: требуется -dsn целевой БД")
+		return fmt.Errorf("migrate up: target database -dsn is required")
 	}
 
 	db, err := openDB(*dialect, *dsn)
@@ -250,11 +250,11 @@ func runMigrateUp(args []string) error {
 		return err
 	}
 	if len(applied) == 0 {
-		fmt.Println("sorm: всё уже применено")
+		fmt.Println("sorm: everything already applied")
 		return nil
 	}
 	for _, f := range applied {
-		fmt.Println("sorm: применена", f)
+		fmt.Println("sorm: applied", f)
 	}
 	return nil
 }

@@ -12,22 +12,23 @@ import (
 	"time"
 )
 
-// Версионные файловые миграции — без внешних инструментов и без docker:
-// каталог *.sql + таблица истории sorm_migrations в целевой БД.
+// Versioned file migrations — no external tools and no docker:
+// a directory of *.sql files + the sorm_migrations history table in the
+// target database.
 //
-// Генерация диффа (Diff) использует replay: существующие миграции
-// проигрываются на ПУСТОЙ scratch-БД, которую предоставляет пользователь
-// (для SQLite достаточно ":memory:"), затем её состояние сравнивается с
-// зарегистрированными моделями, и разница записывается новым файлом
-// <UTC-timestamp>_<name>.sql.
+// Diff generation uses replay: existing migrations are replayed on an
+// EMPTY scratch database provided by the user (for SQLite ":memory:" is
+// enough), then its state is compared with the registered models, and the
+// difference is written as a new <UTC-timestamp>_<name>.sql file.
 
-// HistoryTable — таблица учёта применённых миграций в целевой БД.
+// HistoryTable is the table tracking applied migrations in the target database.
 const HistoryTable = "sorm_migrations"
 
-// Diff генерирует новый версионный файл миграции в dir.
-// dev — пустая одноразовая БД того же диалекта (replay-цель); её содержимое
-// уничтожается смыслово: после вызова она находится в состоянии «все миграции
-// применены». Возвращает имя созданного файла или "" если изменений нет.
+// Diff generates a new versioned migration file in dir.
+// dev is an empty throwaway database of the same dialect (the replay target);
+// its contents are effectively consumed: after the call it is in the "all
+// migrations applied" state. Returns the name of the created file, or "" if
+// there are no changes.
 func Diff(ctx context.Context, dev *sql.DB, dialect, dir, name string) (string, error) {
 	if _, err := Up(ctx, dev, dialect, dir); err != nil {
 		return "", fmt.Errorf("github.com/dvislobokov/sorm/migrate: replay on dev db: %w", err)
@@ -72,8 +73,9 @@ func Diff(ctx context.Context, dev *sql.DB, dialect, dir, name string) (string, 
 		return "", err
 	}
 
-	// Down-файл: реверсы в обратном порядке. Если Atlas не смог обратить
-	// хотя бы одно изменение — down не пишем вовсе (честнее, чем полуоткат).
+	// Down file: reversals in reverse order. If Atlas could not reverse
+	// even one change, we skip the down file entirely (more honest than a
+	// partial rollback).
 	if downComplete && len(downStmts) > 0 {
 		var down strings.Builder
 		fmt.Fprintf(&down, "-- sorm migration (down): %s\n", name)
@@ -92,9 +94,9 @@ func Diff(ctx context.Context, dev *sql.DB, dialect, dir, name string) (string, 
 	return fname, nil
 }
 
-// Down откатывает последние steps применённых миграций по их *.down.sql
-// файлам (новые первыми) и удаляет записи из HistoryTable. Миграция без
-// down-файла останавливает откат с ошибкой.
+// Down reverts the last steps applied migrations using their *.down.sql
+// files (newest first) and removes the records from HistoryTable. A migration
+// without a down file stops the rollback with an error.
 func Down(ctx context.Context, db *sql.DB, dialect, dir string, steps int) ([]string, error) {
 	var out []string
 	err := withMigrationLock(ctx, db, dialect, func() error {
@@ -130,7 +132,7 @@ func down(ctx context.Context, db *sql.DB, dialect, dir string, steps int) ([]st
 		downFile := strings.TrimSuffix(v, ".sql") + ".down.sql"
 		content, err := os.ReadFile(filepath.Join(dir, downFile))
 		if err != nil {
-			return reverted, fmt.Errorf("github.com/dvislobokov/sorm/migrate: нет down-файла для %s: %w", v, err)
+			return reverted, fmt.Errorf("github.com/dvislobokov/sorm/migrate: no down file for %s: %w", v, err)
 		}
 		if err := revertFile(ctx, db, dialect, v, string(content)); err != nil {
 			return reverted, fmt.Errorf("github.com/dvislobokov/sorm/migrate: %s: %w", downFile, err)
@@ -170,13 +172,13 @@ func revertFile(ctx context.Context, db *sql.DB, dialect, version, content strin
 	return tx.Commit()
 }
 
-// Up применяет к db все ещё не применённые миграции из dir (по порядку имён
-// файлов) и записывает их в HistoryTable. Возвращает применённые файлы.
-// На PostgreSQL и SQLite каждый файл применяется в транзакции; MySQL
-// коммитит DDL неявно — файл исполняется постейтментно.
+// Up applies to db all not-yet-applied migrations from dir (in file name
+// order) and records them in HistoryTable. Returns the applied files.
+// On PostgreSQL and SQLite each file is applied in a transaction; MySQL
+// commits DDL implicitly, so the file is executed statement by statement.
 //
-// Конкурентные вызовы (несколько реплик на старте) сериализуются
-// advisory lock'ом — файл не применится дважды.
+// Concurrent calls (several replicas starting up) are serialized with an
+// advisory lock — a file will not be applied twice.
 func Up(ctx context.Context, db *sql.DB, dialect, dir string) ([]string, error) {
 	var out []string
 	err := withMigrationLock(ctx, db, dialect, func() error {
@@ -221,7 +223,7 @@ func up(ctx context.Context, db *sql.DB, dialect, dir string) ([]string, error) 
 	return done, nil
 }
 
-// Pending возвращает файлы, которые Up применил бы (без применения).
+// Pending returns the files Up would apply (without applying them).
 func Pending(ctx context.Context, db *sql.DB, dialect, dir string) ([]string, error) {
 	if err := VerifySum(dir); err != nil {
 		return nil, err
@@ -254,7 +256,7 @@ func applyFile(ctx context.Context, db *sql.DB, dialect, file, content string) e
 	)
 
 	if dialect == "mysql" {
-		// DDL в MySQL коммитится неявно — транзакция бессмысленна.
+		// DDL in MySQL commits implicitly — a transaction is pointless.
 		for _, s := range stmts {
 			if _, err := db.ExecContext(ctx, s); err != nil {
 				return err
@@ -318,7 +320,7 @@ func appliedVersions(ctx context.Context, db *sql.DB) (map[string]bool, error) {
 func migrationFiles(dir string) ([]string, error) {
 	entries, err := os.ReadDir(dir)
 	if os.IsNotExist(err) {
-		return nil, nil // нет каталога = нет миграций
+		return nil, nil // no directory = no migrations
 	}
 	if err != nil {
 		return nil, err
@@ -329,7 +331,7 @@ func migrationFiles(dir string) ([]string, error) {
 			continue
 		}
 		if strings.HasSuffix(e.Name(), ".down.sql") {
-			continue // down-файлы применяет Down, не Up
+			continue // down files are applied by Down, not Up
 		}
 		files = append(files, e.Name())
 	}
@@ -337,9 +339,9 @@ func migrationFiles(dir string) ([]string, error) {
 	return files, nil
 }
 
-// SplitStatements — разбор *.sql файла миграции: строки-комментарии
-// отбрасываются, статименты разделяются «;». Файлы пишет Diff — по одному
-// статименту на строку; литеральные «;» внутри строк не поддерживаются.
+// SplitStatements parses a *.sql migration file: comment lines are
+// discarded, statements are separated by ";". The files are written by Diff —
+// one statement per line; literal ";" inside strings is not supported.
 func SplitStatements(content string) []string {
 	var stmts []string
 	for _, chunk := range strings.Split(content, ";") {

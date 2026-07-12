@@ -1,6 +1,6 @@
-# Сборка из корня модуля sorm:
+# Build from the sorm module root:
 #   docker build -f examples/webapp/Dockerfile .
-# (compose.yaml делает это сам: context = ../..)
+# (compose.yaml does this itself: context = ../..)
 
 FROM golang:1.25 AS build
 WORKDIR /src

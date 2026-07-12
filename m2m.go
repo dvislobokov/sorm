@@ -5,13 +5,13 @@ import (
 	"fmt"
 )
 
-// ManyToMany — связь «многие ко многим» через неявную join-таблицу
-// (тег `many2many:join_table`). Чтение — Include/Any; запись — явные
-// Link/Unlink: sorm не угадывает диффы коллекций, связывание — операция.
+// ManyToMany — many-to-many relation through an implicit join table
+// (`many2many:join_table` tag). Reads via Include/Any; writes via explicit
+// Link/Unlink: sorm does not guess collection diffs, linking is an operation.
 type ManyToMany[E, C any] struct {
 	joinTable   string
-	parentCol   string // колонка join-таблицы со стороны E
-	childCol    string // колонка join-таблицы со стороны C
+	parentCol   string // join-table column on the E side
+	childCol    string // join-table column on the C side
 	initSlice   func(*E)
 	appendChild func(*E, *C)
 }
@@ -24,9 +24,9 @@ func NewManyToMany[E, C any](
 	return ManyToMany[E, C]{joinTable, parentCol, childCol, initSlice, appendChild}
 }
 
-// Link связывает parent с children (INSERT в join-таблицу). Обе стороны
-// должны быть persisted. Повторное связывание — ConstraintError (композитный
-// PK join-таблицы).
+// Link associates parent with children (INSERT into the join table). Both
+// sides must be persisted. Linking twice yields a ConstraintError (the join
+// table's composite PK).
 func (r ManyToMany[E, C]) Link(ctx context.Context, db DB, parent *E, children ...*C) error {
 	if len(children) == 0 {
 		return nil
@@ -50,7 +50,7 @@ func (r ManyToMany[E, C]) Link(ctx context.Context, db DB, parent *E, children .
 	return nil
 }
 
-// Unlink разрывает связи parent с children (DELETE из join-таблицы).
+// Unlink breaks the links between parent and children (DELETE from the join table).
 func (r ManyToMany[E, C]) Unlink(ctx context.Context, db DB, parent *E, children ...*C) error {
 	if len(children) == 0 {
 		return nil
@@ -79,8 +79,8 @@ func (r ManyToMany[E, C]) Unlink(ctx context.Context, db DB, parent *E, children
 	return nil
 }
 
-// Any — фильтр E по связанным C: EXISTS по join-таблице; preds сужают C
-// коррелированным подзапросом.
+// Any filters E by related C: EXISTS over the join table; preds narrow C
+// with a correlated subquery.
 func (r ManyToMany[E, C]) Any(preds ...Pred[C]) Pred[E] {
 	pm, cm := metaFor[E](), metaFor[C]()
 	return pred[E](m2mExistsNode{
@@ -91,9 +91,9 @@ func (r ManyToMany[E, C]) Any(preds ...Pred[C]) Pred[E] {
 	})
 }
 
-// Include — eager loading связанных C: пары из join-таблицы + загрузка
-// детей одним IN-запросом (с чанкованием), раскладка по родителям.
-// Order[C]-опции задают порядок детей у каждого родителя.
+// Include — eager loading of related C: pairs from the join table + loading
+// children with a single IN query (chunked), then distribution to parents.
+// Order[C] options set the order of children within each parent.
 func (r ManyToMany[E, C]) Include(opts ...ChildOpt[C]) IncludeSpec[E] {
 	cfg := childConfig(opts)
 	return IncludeSpec[E]{load: func(ctx context.Context, db DB, sess *Session, parents []*E) error {
@@ -113,7 +113,7 @@ func (r ManyToMany[E, C]) Include(opts ...ChildOpt[C]) IncludeSpec[E] {
 			r.initSlice(p)
 		}
 
-		// 1. пары (parent, child) из join-таблицы
+		// 1. (parent, child) pairs from the join table
 		type pair struct{ p, c any }
 		var pairs []pair
 		childSeen := map[any]bool{}
@@ -163,7 +163,7 @@ func (r ManyToMany[E, C]) Include(opts ...ChildOpt[C]) IncludeSpec[E] {
 			return nil
 		}
 
-		// 2. дети одним IN-запросом (порядок — из cfg.orders)
+		// 2. children in a single IN query (order comes from cfg.orders)
 		var childList []*C
 		for _, chunk := range chunked(childKeys) {
 			cq := Query[C](db).
@@ -178,7 +178,7 @@ func (r ManyToMany[E, C]) Include(opts ...ChildOpt[C]) IncludeSpec[E] {
 			childList = append(childList, children...)
 		}
 
-		// 3. раскладка: обходим детей в порядке запроса — Order[C] соблюдён
+		// 3. distribution: walk children in query order — Order[C] is preserved
 		parentsByChild := map[any][]any{}
 		for _, pr := range pairs {
 			parentsByChild[pr.c] = append(parentsByChild[pr.c], pr.p)
@@ -192,8 +192,8 @@ func (r ManyToMany[E, C]) Include(opts ...ChildOpt[C]) IncludeSpec[E] {
 	}}
 }
 
-// normalizeKey приводит значения ключей к сравнимому виду:
-// database/sql-драйверы (MySQL) возвращают строки как []byte.
+// normalizeKey brings key values to a comparable form:
+// database/sql drivers (MySQL) return strings as []byte.
 func normalizeKey(v any) any {
 	if b, ok := v.([]byte); ok {
 		return string(b)

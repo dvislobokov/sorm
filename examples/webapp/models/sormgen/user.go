@@ -8,7 +8,7 @@ import (
 	models "github.com/dvislobokov/sorm/examples/webapp/models"
 )
 
-// User — типизированные дескрипторы колонок models.User.
+// User holds typed column descriptors for models.User.
 var User = struct {
 	ID      sorm.OrdCol[models.User, int64]
 	Name    sorm.StrCol[models.User]

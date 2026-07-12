@@ -10,30 +10,31 @@ import (
 	"strings"
 )
 
-// Чексуммы каталога миграций: файл sorm.sum фиксирует содержимое каждого
-// *.sql (включая down-файлы). Up/Down/Pending сверяют каталог с суммами —
-// переписанная задним числом или подложенная миграция обнаруживается до
-// какого-либо SQL. Diff обновляет sorm.sum после записи новых файлов.
+// Migration directory checksums: the sorm.sum file pins the contents of
+// every *.sql (including down files). Up/Down/Pending verify the directory
+// against the sums — a retroactively rewritten or planted migration is
+// detected before any SQL runs. Diff updates sorm.sum after writing new
+// files.
 //
-// Каталоги без sorm.sum принимаются (обратная совместимость и рукописные
-// миграции): включение — первым же запуском Diff или WriteSum.
+// Directories without sorm.sum are accepted (backward compatibility and
+// hand-written migrations): opt in with the first run of Diff or WriteSum.
 
-// SumFile — имя файла контрольных сумм в каталоге миграций.
+// SumFile is the name of the checksum file in the migration directory.
 const SumFile = "sorm.sum"
 
-// SumError — расхождение каталога миграций с sorm.sum.
+// SumError reports a mismatch between the migration directory and sorm.sum.
 type SumError struct {
-	Modified []string // файл есть в sorm.sum, но содержимое изменилось
-	Missing  []string // файл есть в sorm.sum, но отсутствует на диске
-	Extra    []string // файл на диске, но не в sorm.sum
+	Modified []string // file is in sorm.sum, but its contents changed
+	Missing  []string // file is in sorm.sum, but absent on disk
+	Extra    []string // file is on disk, but not in sorm.sum
 }
 
 func (e *SumError) Error() string {
-	return fmt.Sprintf("github.com/dvislobokov/sorm/migrate: каталог миграций не совпадает с %s: изменены %v, отсутствуют %v, лишние %v",
+	return fmt.Sprintf("github.com/dvislobokov/sorm/migrate: migration directory does not match %s: modified %v, missing %v, extra %v",
 		SumFile, e.Modified, e.Missing, e.Extra)
 }
 
-// WriteSum пересчитывает sorm.sum по текущему содержимому каталога.
+// WriteSum recomputes sorm.sum from the current directory contents.
 func WriteSum(dir string) error {
 	sums, err := dirChecksums(dir)
 	if err != nil {
@@ -52,7 +53,7 @@ func WriteSum(dir string) error {
 	return os.WriteFile(filepath.Join(dir, SumFile), []byte(b.String()), 0o644)
 }
 
-// VerifySum сверяет каталог с sorm.sum; отсутствие sorm.sum — не ошибка.
+// VerifySum checks the directory against sorm.sum; a missing sorm.sum is not an error.
 func VerifySum(dir string) error {
 	content, err := os.ReadFile(filepath.Join(dir, SumFile))
 	if os.IsNotExist(err) {
@@ -69,7 +70,7 @@ func VerifySum(dir string) error {
 		}
 		sum, name, ok := strings.Cut(line, "  ")
 		if !ok {
-			return fmt.Errorf("github.com/dvislobokov/sorm/migrate: битая строка в %s: %q", SumFile, line)
+			return fmt.Errorf("github.com/dvislobokov/sorm/migrate: malformed line in %s: %q", SumFile, line)
 		}
 		want[name] = sum
 	}

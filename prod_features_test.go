@@ -12,7 +12,7 @@ import (
 	gen "github.com/dvislobokov/sorm/internal/testmodels/sormgen"
 )
 
-// --- ConstraintError: типизированные ошибки БД на всех диалектах ---
+// --- ConstraintError: typed DB errors across all dialects ---
 
 func TestConstraintErrorsSQLite(t *testing.T) { runConstraintScenario(t, sqliteDB(t)) }
 func TestConstraintErrorsMySQL(t *testing.T)  { runConstraintScenario(t, mysqlDB(t)) }
@@ -28,12 +28,12 @@ func runConstraintScenario(t *testing.T, db sorm.DB) {
 		t.Fatal(err)
 	}
 
-	// Дубликат unique email → ConstraintUnique, а не сырая ошибка драйвера.
+	// A duplicate unique email → ConstraintUnique, not a raw driver error.
 	s2 := sorm.NewSession(db)
 	sorm.Add(s2, &models.User{Email: "dup@b.c", Name: "Two", Active: true, CreatedAt: now})
 	err := s2.SaveChanges(ctx)
 	if !sorm.IsUniqueViolation(err) {
-		t.Fatalf("ожидали unique violation, получили %v", err)
+		t.Fatalf("expected unique violation, got %v", err)
 	}
 	var ce *sorm.ConstraintError
 	if !errors.As(err, &ce) || ce.Kind != sorm.ConstraintUnique {
@@ -41,7 +41,7 @@ func runConstraintScenario(t *testing.T, db sorm.DB) {
 	}
 }
 
-// --- RunInTx: commit, rollback, сессия поверх транзакции ---
+// --- RunInTx: commit, rollback, a session on top of a transaction ---
 
 func TestRunInTxSQLite(t *testing.T) { runTxScenario(t, sqliteDB(t)) }
 func TestRunInTxPG(t *testing.T)     { runTxScenario(t, testPool(t)) }
@@ -49,21 +49,21 @@ func TestRunInTxPG(t *testing.T)     { runTxScenario(t, testPool(t)) }
 func runTxScenario(t *testing.T, db sorm.DB) {
 	ctx := context.Background()
 
-	// Commit: сессия внутри RunInTx делает flush в ту же транзакцию.
+	// Commit: a session inside RunInTx flushes into the same transaction.
 	err := sorm.RunInTx(ctx, db, func(tx sorm.Tx) error {
 		s := sorm.NewSession(tx)
 		sorm.Add(s, &models.User{Email: "tx@b.c", Name: "Tx", Active: true})
-		return s.SaveChanges(ctx) // flush без вложенной транзакции
+		return s.SaveChanges(ctx) // flush without a nested transaction
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	n, _ := sorm.Query[models.User](db).Where(gen.User.Email.Eq("tx@b.c")).Count(ctx)
 	if n != 1 {
-		t.Fatalf("после commit users=%d", n)
+		t.Fatalf("after commit users=%d", n)
 	}
 
-	// Rollback: ошибка из fn откатывает всё.
+	// Rollback: an error from fn rolls everything back.
 	boom := errors.New("boom")
 	err = sorm.RunInTx(ctx, db, func(tx sorm.Tx) error {
 		s := sorm.NewSession(tx)
@@ -78,11 +78,11 @@ func runTxScenario(t *testing.T, db sorm.DB) {
 	}
 	n, _ = sorm.Query[models.User](db).Where(gen.User.Email.Eq("rollback@b.c")).Count(ctx)
 	if n != 0 {
-		t.Fatalf("после rollback users=%d, want 0", n)
+		t.Fatalf("after rollback users=%d, want 0", n)
 	}
 }
 
-// --- BelongsTo: Include и Is ---
+// --- BelongsTo: Include and Is ---
 
 func TestBelongsToIsSQL(t *testing.T) {
 	p := gen.Post
@@ -95,7 +95,7 @@ func assertPostSQL(t *testing.T, q sorm.QueryBuilder[models.Post], wantFragment 
 	t.Helper()
 	sql, _ := q.ToSQL()
 	if !strings.Contains(sql, wantFragment) {
-		t.Errorf("SQL %s\nне содержит %s", sql, wantFragment)
+		t.Errorf("SQL %s\ndoes not contain %s", sql, wantFragment)
 	}
 }
 
@@ -128,19 +128,19 @@ func TestBelongsToIncludeSQLite(t *testing.T) {
 		posts[2].Author == nil || posts[2].Author.Name != "Bob" {
 		t.Fatalf("belongsTo include: %+v", posts)
 	}
-	// Один и тот же родитель — один указатель (раскладка по PK).
+	// The same parent means the same pointer (fan-out by PK).
 	if posts[0].Author != posts[1].Author {
-		t.Fatal("родитель Alice должен быть одним объектом")
+		t.Fatal("parent Alice must be a single object")
 	}
 
-	// Is: посты активных авторов.
+	// Is: posts by active authors.
 	activePosts, err := sorm.Query[models.Post](db).Where(p.Author.Is(u.Active.Eq(true))).All(ctx)
 	if err != nil || len(activePosts) != 2 {
-		t.Fatalf("Is: %d постов (err=%v), want 2", len(activePosts), err)
+		t.Fatalf("Is: %d posts (err=%v), want 2", len(activePosts), err)
 	}
 }
 
-// --- Instrument: перехват SQL ---
+// --- Instrument: SQL interception ---
 
 func TestInstrument(t *testing.T) {
 	base := sqliteDB(t)
@@ -166,7 +166,7 @@ func TestInstrument(t *testing.T) {
 		kinds = append(kinds, op.Kind)
 	}
 	joined := strings.Join(kinds, ",")
-	// SaveChanges: begin → batch → commit; затем query.
+	// SaveChanges: begin → batch → commit; then query.
 	if !strings.Contains(joined, "begin,batch,commit") || !strings.Contains(joined, "query") {
 		t.Fatalf("kinds = %v", kinds)
 	}

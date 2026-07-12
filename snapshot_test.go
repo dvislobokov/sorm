@@ -9,8 +9,8 @@ import (
 	models "github.com/dvislobokov/sorm/internal/testmodels"
 )
 
-// Тесты сгенерированных Snapshot/Diff — в том числе ловушки, найденные ревью
-// дизайна: monotonic-компонента time.Time, мутация []byte in place, указатели.
+// Tests for generated Snapshot/Diff — including traps found during design
+// review: the time.Time monotonic component, in-place []byte mutation, pointers.
 
 func newUser() *models.User {
 	nick := "nick"
@@ -23,7 +23,7 @@ func newUser() *models.User {
 		Age:       30,
 		Balance:   99.5,
 		Avatar:    []byte{1, 2, 3},
-		CreatedAt: time.Now(), // содержит monotonic-компоненту
+		CreatedAt: time.Now(), // carries a monotonic component
 		Version:   1,
 	}
 }
@@ -38,7 +38,7 @@ func TestDiffCleanEntity(t *testing.T) {
 	m := sorm.MetaOf[models.User]()
 	snap := m.Snapshot(u)
 	if ch := m.Diff(snap, u); len(ch) != 0 {
-		t.Fatalf("немутированная сущность даёт дифф %v (фантомные UPDATE)", ch)
+		t.Fatalf("unmodified entity produced diff %v (phantom UPDATEs)", ch)
 	}
 }
 
@@ -46,10 +46,10 @@ func TestDiffTimeMonotonic(t *testing.T) {
 	u := newUser()
 	m := sorm.MetaOf[models.User]()
 	snap := m.Snapshot(u)
-	// «Та же» временная точка без monotonic — как после чтения из БД.
+	// The "same" instant without the monotonic clock — as after a DB read.
 	u.CreatedAt = u.CreatedAt.Round(0).UTC()
 	if ch := m.Diff(snap, u); len(ch) != 0 {
-		t.Fatalf("эквивалентное время в другом представлении дало дифф %v", ch)
+		t.Fatalf("equivalent time in a different representation produced diff %v", ch)
 	}
 }
 
@@ -58,11 +58,11 @@ func TestDiffDetectsChanges(t *testing.T) {
 	m := sorm.MetaOf[models.User]()
 	snap := m.Snapshot(u)
 
-	u.Email = "new@b.c"        // индекс 1
-	*u.Nickname = "other"      // индекс 3 — мутация через указатель
-	u.Avatar[0] = 9            // индекс 7 — мутация []byte in place
+	u.Email = "new@b.c"        // index 1
+	*u.Nickname = "other"      // index 3 — mutation through a pointer
+	u.Avatar[0] = 9            // index 7 — in-place []byte mutation
 	deleted := time.Now()
-	u.DeletedAt = &deleted     // индекс 9 — nil → значение
+	u.DeletedAt = &deleted     // index 9 — nil → value
 
 	got := m.Diff(snap, u)
 	want := []int{1, 3, 7, 9}
@@ -75,10 +75,10 @@ func TestDiffIgnoresPKAndVersion(t *testing.T) {
 	u := newUser()
 	m := sorm.MetaOf[models.User]()
 	snap := m.Snapshot(u)
-	u.ID = 42       // PK не диффится
-	u.Version = 7   // версией управляет рантайм
+	u.ID = 42       // PK is not diffed
+	u.Version = 7   // the version is managed by the runtime
 	if ch := m.Diff(snap, u); len(ch) != 0 {
-		t.Fatalf("PK/Version попали в дифф: %v", ch)
+		t.Fatalf("PK/Version ended up in the diff: %v", ch)
 	}
 }
 
@@ -86,7 +86,7 @@ func TestDiffNilPointerTransitions(t *testing.T) {
 	u := newUser()
 	m := sorm.MetaOf[models.User]()
 	snap := m.Snapshot(u)
-	u.Nickname = nil // значение → nil
+	u.Nickname = nil // value → nil
 	got := m.Diff(snap, u)
 	if !slices.Equal(got, []int{3}) {
 		t.Fatalf("diff = %v, want [3]", got)

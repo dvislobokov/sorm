@@ -2,9 +2,10 @@ package sorm
 
 import "time"
 
-// Хелперы для генерируемых снапшотов: корректное копирование и сравнение
-// nullable-полей. Наивный == по указателям сравнил бы адреса, по time.Time —
-// monotonic-компоненту (фантомные UPDATE), по []byte в интерфейсе — паника.
+// Helpers for generated snapshots: correct copying and comparison of
+// nullable fields. A naive == on pointers would compare addresses, on
+// time.Time — the monotonic component (phantom UPDATEs), on []byte in an
+// interface — panic.
 
 func ClonePtr[V any](p *V) *V {
 	if p == nil {
@@ -21,7 +22,7 @@ func PtrEq[V comparable](a, b *V) bool {
 	return *a == *b
 }
 
-// CloneTimePtr копирует *time.Time, отбрасывая monotonic-компоненту.
+// CloneTimePtr copies a *time.Time, dropping the monotonic component.
 func CloneTimePtr(p *time.Time) *time.Time {
 	if p == nil {
 		return nil

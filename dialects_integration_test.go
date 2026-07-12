@@ -22,8 +22,8 @@ import (
 	gen "github.com/dvislobokov/sorm/internal/testmodels/sormgen"
 )
 
-// generatedDDL — CREATE TABLE из `sorm schema`: интеграционные тесты работают
-// на той же схеме, которую увидит Atlas, — генератор DDL проверен рантаймом.
+// generatedDDL — CREATE TABLE from `sorm schema`: integration tests run on
+// the same schema Atlas will see, so the DDL generator is verified at runtime.
 func generatedDDL(t *testing.T, dialect string) []string {
 	t.Helper()
 	s, err := parse.Load("./internal/testmodels")
@@ -51,9 +51,9 @@ func generatedDDL(t *testing.T, dialect string) []string {
 	return stmts
 }
 
-// Кросс-диалектный сквозной сценарий: одна и та же бизнес-логика sorm
-// должна работать на PostgreSQL (session_integration_test), SQLite
-// (in-memory, гоняется всегда) и MySQL (гейт SORM_TEST_MYSQL_DSN).
+// Cross-dialect end-to-end scenario: the same sorm business logic must
+// work on PostgreSQL (session_integration_test), SQLite (in-memory,
+// always runs) and MySQL (gated by SORM_TEST_MYSQL_DSN).
 
 func sqliteDB(t *testing.T) sorm.DB {
 	t.Helper()
@@ -61,7 +61,7 @@ func sqliteDB(t *testing.T) sorm.DB {
 	if err != nil {
 		t.Fatal(err)
 	}
-	sdb.SetMaxOpenConns(1) // :memory: живёт в одном соединении
+	sdb.SetMaxOpenConns(1) // :memory: lives in a single connection
 	t.Cleanup(func() { sdb.Close() })
 
 	for _, s := range generatedDDL(t, "sqlite") {
@@ -74,9 +74,9 @@ func sqliteDB(t *testing.T) sorm.DB {
 
 func mysqlDB(t *testing.T) sorm.DB {
 	t.Helper()
-	dsn := os.Getenv("SORM_TEST_MYSQL_DSN") // например: root:root@tcp(localhost:13306)/sorm_test?parseTime=true
+	dsn := os.Getenv("SORM_TEST_MYSQL_DSN") // e.g.: root:root@tcp(localhost:13306)/sorm_test?parseTime=true
 	if dsn == "" {
-		t.Skip("SORM_TEST_MYSQL_DSN не задан — MySQL-тесты пропущены")
+		t.Skip("SORM_TEST_MYSQL_DSN not set — MySQL tests skipped")
 	}
 	sdb, err := sql.Open("mysql", dsn)
 	if err != nil {
@@ -103,14 +103,14 @@ func mysqlDB(t *testing.T) sorm.DB {
 func TestSQLiteFullScenario(t *testing.T) { runDialectScenario(t, sqliteDB(t)) }
 func TestMySQLFullScenario(t *testing.T)  { runDialectScenario(t, mysqlDB(t)) }
 
-// runDialectScenario — сквозной сценарий: граф через сессию, Include,
-// частичный UPDATE с версией, конфликт, EXISTS, set-based, проекция, удаление.
+// runDialectScenario — end-to-end scenario: graph via session, Include,
+// partial UPDATE with versioning, conflict, EXISTS, set-based, projection, delete.
 func runDialectScenario(t *testing.T, db sorm.DB) {
 	ctx := context.Background()
 	u := gen.User
 	p := gen.Post
 
-	// 1. Вставка графа: RETURNING (PG) или LastInsertId (MySQL/SQLite).
+	// 1. Graph insert: RETURNING (PG) or LastInsertId (MySQL/SQLite).
 	now := time.Now()
 	s := sorm.NewSession(db)
 	alice := &models.User{Email: "a@b.c", Name: "Alice", Active: true, Age: 30, CreatedAt: now}
@@ -126,7 +126,7 @@ func runDialectScenario(t *testing.T, db sorm.DB) {
 		t.Fatalf("PK/fixup: alice=%d bob=%d post1.fk=%d", alice.ID, bob.ID, post1.AuthorID)
 	}
 
-	// 2. Запросы: zero-value условие + EXISTS.
+	// 2. Queries: zero-value condition + EXISTS.
 	inactive, err := sorm.Query[models.User](db).Where(u.Active.Eq(false)).All(ctx)
 	if err != nil || len(inactive) != 1 || inactive[0].Name != "Bob" {
 		t.Fatalf("inactive: %v %v", inactive, err)
@@ -136,7 +136,7 @@ func runDialectScenario(t *testing.T, db sorm.DB) {
 		t.Fatalf("EXISTS: %v %v", withPosts, err)
 	}
 
-	// 3. Track + Include, частичный UPDATE ребёнка и родителя.
+	// 3. Track + Include, partial UPDATE of child and parent.
 	s2 := sorm.NewSession(db)
 	loaded, err := sorm.Track[models.User](s2).
 		Where(u.Email.Eq("a@b.c")).
@@ -165,10 +165,10 @@ func runDialectScenario(t *testing.T, db sorm.DB) {
 	a2.Name = "A2"
 	var conflict *sorm.ConflictError
 	if err := sB.SaveChanges(ctx); !errors.As(err, &conflict) {
-		t.Fatalf("ожидали ConflictError, получили %v", err)
+		t.Fatalf("expected ConflictError, got %v", err)
 	}
 
-	// 5. Set-based UPDATE + проекция.
+	// 5. Set-based UPDATE + projection.
 	if _, err := sorm.Update[models.Post](db).
 		Set(p.Body.Set("bulk")).
 		Where(p.AuthorID.Eq(alice.ID)).
@@ -191,7 +191,7 @@ func runDialectScenario(t *testing.T, db sorm.DB) {
 		t.Fatalf("projection: %v err=%v", rows, err)
 	}
 
-	// 6. Удаление: дети раньше родителя.
+	// 6. Delete: children before the parent.
 	s3 := sorm.NewSession(db)
 	gone, err := sorm.Track[models.User](s3).Where(u.Email.Eq("a@b.c")).With(u.Posts.Include()).One(ctx)
 	if err != nil {
@@ -204,6 +204,6 @@ func runDialectScenario(t *testing.T, db sorm.DB) {
 	}
 	n, err := sorm.Query[models.User](db).Count(ctx)
 	if err != nil || n != 1 {
-		t.Fatalf("после удаления users=%d err=%v", n, err)
+		t.Fatalf("after delete users=%d err=%v", n, err)
 	}
 }

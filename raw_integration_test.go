@@ -30,14 +30,14 @@ func TestRawStrictMismatch(t *testing.T) {
 	ctx := context.Background()
 	seedAlice(t, pool)
 
-	// Частичный SELECT в сущность — не тихо полупустой объект, а ScanError.
+	// A partial SELECT into an entity is a ScanError, not a silently half-empty object.
 	_, err := sorm.Raw[models.User](pool, `SELECT id, name FROM users`).All(ctx)
 	var se *sorm.ScanError
 	if !errors.As(err, &se) {
-		t.Fatalf("ожидали ScanError, получили %v", err)
+		t.Fatalf("expected ScanError, got %v", err)
 	}
 	if len(se.Extra) == 0 {
-		t.Fatalf("ScanError.Extra пуст: %v", se)
+		t.Fatalf("ScanError.Extra is empty: %v", se)
 	}
 }
 
@@ -68,7 +68,7 @@ func TestSetBasedUpdateDelete(t *testing.T) {
 	ctx := context.Background()
 	seedAlice(t, pool)
 
-	// Set-based UPDATE бампает version → открытая сессия ловит конфликт.
+	// A set-based UPDATE bumps version → an open session catches the conflict.
 	s := sorm.NewSession(pool)
 	tracked, err := sorm.Track[models.User](s).Where(gen.User.Email.Eq("a@b.c")).One(ctx)
 	if err != nil {
@@ -87,7 +87,7 @@ func TestSetBasedUpdateDelete(t *testing.T) {
 	err = s.SaveChanges(ctx)
 	var conflict *sorm.ConflictError
 	if !errors.As(err, &conflict) {
-		t.Fatalf("сессия не поймала конфликт после set-based update: %v", err)
+		t.Fatalf("session missed the conflict after a set-based update: %v", err)
 	}
 
 	n, err = sorm.Delete[models.User](pool).Where(gen.User.Active.Eq(false)).Exec(ctx)

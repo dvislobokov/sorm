@@ -7,11 +7,11 @@ import (
 )
 
 // Session — Unit of Work: identity map + snapshot change tracking.
-// Загруженные через Track сущности мутируются обычным Go-кодом;
-// SaveChanges вычисляет минимальный дифф и применяет его батчами
-// в одной транзакции.
+// Entities loaded via Track are mutated with plain Go code;
+// SaveChanges computes the minimal diff and applies it in batches
+// within a single transaction.
 //
-// Не потокобезопасна (как DbContext в EF); живёт один юнит работы.
+// Not thread-safe (like DbContext in EF); lives for one unit of work.
 type Session struct {
 	db     DB
 	stores map[reflect.Type]anyStore
@@ -21,18 +21,18 @@ func NewSession(db DB) *Session {
 	return &Session{db: db, stores: map[reflect.Type]anyStore{}}
 }
 
-// Track — тот же билдер запросов, но материализованные сущности попадают
-// в трекер. Повторная загрузка той же строки возвращает уже отслеживаемый
-// указатель; данные из БД не перезатирают локальные изменения (семантика EF).
+// Track is the same query builder, but materialized entities go into
+// the tracker. Reloading the same row returns the already-tracked
+// pointer; database data does not overwrite local changes (EF semantics).
 func Track[E any](s *Session) QueryBuilder[E] {
 	q := Query[E](s.db)
 	q.sess = s
 	return q
 }
 
-// Add регистрирует новые сущности на INSERT. FK нового графа задаётся
-// навигацией (p.Author = u) — значение FK-колонки проставит рантайм после
-// вставки родителя.
+// Add registers new entities for INSERT. FKs of a new graph are set via
+// navigation (p.Author = u) — the runtime fills in the FK column value
+// after the parent is inserted.
 func Add[E any](s *Session, entities ...*E) {
 	st := storeOf[E](s)
 	for _, e := range entities {
@@ -44,8 +44,8 @@ func Add[E any](s *Session, entities ...*E) {
 	}
 }
 
-// Remove помечает сущности на DELETE. Сущность должна быть отслеживаемой
-// или иметь заполненный PK (проверяется в SaveChanges).
+// Remove marks entities for DELETE. An entity must be tracked
+// or have a populated PK (checked in SaveChanges).
 func Remove[E any](s *Session, entities ...*E) {
 	st := storeOf[E](s)
 	for _, e := range entities {
@@ -57,14 +57,14 @@ func Remove[E any](s *Session, entities ...*E) {
 	}
 }
 
-// SaveChanges открывает транзакцию, применяет дифф и коммитит.
-// Порядок: DELETE (дети раньше родителей) → UPDATE (только изменённые
-// колонки) → INSERT по уровням зависимостей (RETURNING → FK-fixup детей).
-// DELETE+UPDATE уходят одним pgx.Batch (один roundtrip), каждый уровень
-// вставок — ещё одним.
+// SaveChanges opens a transaction, applies the diff, and commits.
+// Order: DELETE (children before parents) → UPDATE (changed columns
+// only) → INSERT by dependency level (RETURNING → FK fixup of children).
+// DELETE+UPDATE go in one pgx.Batch (single roundtrip), each insert
+// level in another.
 func (s *Session) SaveChanges(ctx context.Context) error {
-	// Сессия поверх уже открытой транзакции (RunInTx): flush в ней,
-	// commit — за владельцем транзакции.
+	// Session on top of an already-open transaction (RunInTx): flush in it,
+	// commit is up to the transaction owner.
 	if tx, ok := s.db.(Tx); ok {
 		return s.SaveChangesTx(ctx, tx)
 	}
@@ -84,8 +84,8 @@ func (s *Session) SaveChanges(ctx context.Context) error {
 	return nil
 }
 
-// SaveChangesTx применяет дифф внутри внешней транзакции; commit — за вызывающим.
-// Внимание: состояние трекера обновляется сразу после успешного flush.
+// SaveChangesTx applies the diff inside an external transaction; commit is up to the caller.
+// Note: tracker state is updated immediately after a successful flush.
 func (s *Session) SaveChangesTx(ctx context.Context, tx Tx) error {
 	post, err := s.flush(ctx, tx)
 	if err != nil {
@@ -95,7 +95,7 @@ func (s *Session) SaveChangesTx(ctx context.Context, tx Tx) error {
 	return nil
 }
 
-// --- хранилище per-type ---
+// --- per-type store ---
 
 type anyStore interface {
 	collectAdded(set map[any]bool)
@@ -132,7 +132,7 @@ func storeOf[E any](s *Session) *tracker[E] {
 	return tr
 }
 
-// trackScanned — identity map: та же строка → тот же указатель.
+// trackScanned — identity map: same row → same pointer.
 func (t *tracker[E]) trackScanned(e *E) *E {
 	pk := t.meta.PKValue(e)
 	if existing, ok := t.byPK[pk]; ok {

@@ -9,8 +9,8 @@ import (
 	gen "github.com/dvislobokov/sorm/internal/testmodels/sormgen"
 )
 
-// Строковый (UUID) PK, назначаемый клиентом: insert без RETURNING,
-// identity map и дифф по строковому ключу, FK на int64-родителя.
+// Client-assigned string (UUID) PK: insert without RETURNING,
+// identity map and diff keyed by string, FK to an int64 parent.
 func TestStringPKSQLite(t *testing.T) {
 	db := sqliteDB(t)
 	ctx := context.Background()
@@ -24,10 +24,10 @@ func TestStringPKSQLite(t *testing.T) {
 		t.Fatal(err)
 	}
 	if key.UserID != owner.ID {
-		t.Fatalf("FK-fixup со строковым PK ребёнка: %d != %d", key.UserID, owner.ID)
+		t.Fatalf("FK fixup with a string child PK: %d != %d", key.UserID, owner.ID)
 	}
 
-	// Track по строковому PK + частичный UPDATE.
+	// Track by string PK + partial UPDATE.
 	s2 := sorm.NewSession(db)
 	k := gen.ApiKey
 	loaded, err := sorm.Track[models.ApiKey](s2).Where(k.ID.Eq(key.ID)).One(ctx)
@@ -44,18 +44,19 @@ func TestStringPKSQLite(t *testing.T) {
 		t.Fatalf("label=%q err=%v", fresh.Label, err)
 	}
 
-	// Identity map по строковому ключу.
+	// Identity map keyed by string.
 	a, _ := sorm.Track[models.ApiKey](s2).Where(k.ID.Eq(key.ID)).One(ctx)
 	b, _ := sorm.Track[models.ApiKey](s2).Where(k.Label.Eq("prod")).One(ctx)
 	if a != b {
-		t.Fatal("identity map по строковому PK не сработал")
+		t.Fatal("identity map by string PK did not work")
 	}
 
-	// Пустой PK у не-auto сущности — валидационная ошибка до БД? Пока — ошибка
-	// вставки родителем FK или самой БД; фиксируем текущее поведение Remove-валидации.
+	// Empty PK on a non-auto entity — a validation error before hitting the DB?
+	// For now it's an FK insert error or a DB error; we pin the current
+	// Remove-validation behavior.
 	s3 := sorm.NewSession(db)
-	sorm.Remove(s3, &models.ApiKey{}) // нулевой PK, не отслеживается
+	sorm.Remove(s3, &models.ApiKey{}) // zero PK, not tracked
 	if err := s3.SaveChanges(ctx); err == nil {
-		t.Fatal("Remove без PK должен падать валидацией")
+		t.Fatal("Remove without a PK must fail validation")
 	}
 }

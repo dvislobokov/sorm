@@ -1,11 +1,11 @@
-# Бенчмарки: sorm vs GORM vs Ent vs raw database/sql
+# Benchmarks: sorm vs GORM vs Ent vs raw database/sql
 
-Отдельный Go-модуль — зависимости GORM/Ent не попадают в go.mod библиотеки.
+A separate Go module — GORM/Ent dependencies do not leak into the library's go.mod.
 
-СУБД — SQLite in-memory на pure-Go драйверах (без cgo и сети): меряется
-overhead библиотек, а не база. Одинаковая таблица, одинаковые данные.
+The DBMS is in-memory SQLite on pure-Go drivers (no cgo or network): we measure
+library overhead, not the database. Same table, same data.
 
-## Запуск
+## Running
 
 ```bash
 cd benchmarks
@@ -14,30 +14,31 @@ go run -mod=mod entgo.io/ent/cmd/ent generate ./ent/schema  # ent client
 go test -bench . -benchmem
 ```
 
-## Результаты (Windows, go1.25, SQLite in-memory, 2026-07-12)
+## Results (Windows, go1.25, SQLite in-memory, 2026-07-12)
 
-| Сценарий | sorm | GORM | Ent | raw |
+| Scenario | sorm | GORM | Ent | raw |
 |---|---|---|---|---|
-| **Query 1000 строк**, мкс/оп | **565** | 1039 | 706 | 517 |
-| — аллокаций/оп | **8 788** | 13 788 | 13 821 | 7 770 |
-| **Insert 100 строк** (bulk), мкс/оп | **466** | 470 | 550 | — |
-| **Update одного поля**, мкс/оп | **7.3** | 10.8 | 17.1 | — |
-| — аллокаций/оп | **39** | 56 | 107 | — |
+| **Query 1000 rows**, µs/op | **565** | 1039 | 706 | 517 |
+| — allocs/op | **8 788** | 13 788 | 13 821 | 7 770 |
+| **Insert 100 rows** (bulk), µs/op | **466** | 470 | 550 | — |
+| **Update of a single field**, µs/op | **7.3** | 10.8 | 17.1 | — |
+| — allocs/op | **39** | 56 | 107 | — |
 
-Выводы:
+Takeaways:
 
-- **Чтение**: sorm в пределах ~9% от raw `database/sql` (кодоген-сканеры без
-  рефлексии), в 1.8× быстрее GORM и 1.25× быстрее Ent, с наименьшим числом
-  аллокаций среди ORM.
-- **Bulk insert**: паритет с GORM (оба используют multi-row VALUES), быстрее
-  Ent. При этом сценарий sorm — полный Unit of Work (`Add` × 100 →
-  `SaveChanges`: снапшоты, топосорт, транзакция), а не голый `Create`.
-- **Точечный update**: sorm быстрее обоих — дифф по снапшоту дешевле
-  (26 нс, 0 аллокаций), UPDATE несёт только изменённые колонки.
+- **Reads**: sorm is within ~9% of raw `database/sql` (codegen scanners with
+  no reflection), 1.8× faster than GORM and 1.25× faster than Ent, with the
+  fewest allocations among the ORMs.
+- **Bulk insert**: parity with GORM (both use multi-row VALUES), faster than
+  Ent. Note that the sorm scenario is a full Unit of Work (`Add` × 100 →
+  `SaveChanges`: snapshots, toposort, transaction), not a bare `Create`.
+- **Single-row update**: sorm is faster than both — the snapshot diff is
+  cheaper (26 ns, 0 allocations), and the UPDATE carries only the changed
+  columns.
 
-Сценарий UpdateOne у sorm дополнительно включает optimistic concurrency
-(version-предикат) — у GORM/Ent в этих замерах его нет.
+The sorm UpdateOne scenario additionally includes optimistic concurrency
+(a version predicate) — GORM/Ent do not have it in these measurements.
 
-Замечания по честности: у каждой библиотеки — её идиоматичный API
-(gorm.Create batch, ent.CreateBulk, sorm.Session); логгер GORM отключён;
-один сид и одна форма таблицы для всех.
+Fairness notes: each library uses its idiomatic API (gorm.Create batch,
+ent.CreateBulk, sorm.Session); the GORM logger is disabled; one seed and
+one table shape for all.

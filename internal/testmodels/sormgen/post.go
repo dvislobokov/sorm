@@ -8,7 +8,7 @@ import (
 	models "github.com/dvislobokov/sorm/internal/testmodels"
 )
 
-// Post — типизированные дескрипторы колонок models.Post.
+// Post holds typed column descriptors for models.Post.
 var Post = struct {
 	ID       sorm.OrdCol[models.Post, int64]
 	AuthorID sorm.OrdCol[models.Post, int64]

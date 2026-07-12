@@ -1,16 +1,18 @@
-// Package migrate — декларативные миграции из кода приложения на движке
-// Atlas (ariga.io/atlas как Go-зависимость, без внешнего CLI):
+// Package migrate provides declarative migrations from application code,
+// powered by the Atlas engine (ariga.io/atlas as a Go dependency, no
+// external CLI):
 //
-//	sdb, _ := sql.Open("pgx", dsn) // database/sql-соединение
+//	sdb, _ := sql.Open("pgx", dsn) // database/sql connection
 //	err := migrate.Apply(ctx, sdb, "postgres")
 //
-// Желаемая схема берётся из sorm.Tables() (регистрируется сгенерированным
-// пакетом sormgen), текущая — инспекцией БД; Atlas вычисляет и применяет
-// дифф. Plan возвращает SQL без применения (dry-run / ревью).
+// The desired schema comes from sorm.Tables() (registered by the generated
+// sormgen package), the current one from database inspection; Atlas computes
+// and applies the diff. Plan returns the SQL without applying it
+// (dry-run / review).
 //
-// Рантайм sorm НЕ зависит от Atlas: зависимость линкуется только при
-// импорте этого пакета. Для версионных файловых миграций (CI, ревью,
-// прод) используйте `sorm schema` + atlas CLI — см. docs/design.md.
+// The sorm runtime does NOT depend on Atlas: the dependency is linked only
+// when this package is imported. For versioned file migrations (CI, review,
+// production) use `sorm schema` + the atlas CLI — see docs/design.md.
 package migrate
 
 import (
@@ -28,9 +30,9 @@ import (
 	"github.com/dvislobokov/sorm"
 )
 
-// Apply приводит схему БД к состоянию зарегистрированных моделей.
-// Сравнение ограничено таблицами sorm — чужие таблицы не трогаются.
-// Конкурентные вызовы сериализуются advisory lock'ом.
+// Apply brings the database schema in line with the registered models.
+// The comparison is limited to sorm tables — foreign tables are left alone.
+// Concurrent calls are serialized with an advisory lock.
 func Apply(ctx context.Context, db *sql.DB, dialect string) error {
 	return withMigrationLock(ctx, db, dialect, func() error {
 		drv, changes, err := diff(ctx, db, dialect)
@@ -47,7 +49,7 @@ func Apply(ctx context.Context, db *sql.DB, dialect string) error {
 	})
 }
 
-// Plan возвращает SQL-статименты диффа без применения.
+// Plan returns the diff's SQL statements without applying them.
 func Plan(ctx context.Context, db *sql.DB, dialect string) ([]string, error) {
 	drv, changes, err := diff(ctx, db, dialect)
 	if err != nil {
@@ -82,7 +84,7 @@ func diff(ctx context.Context, db *sql.DB, dialect string) (atlasmigrate.Driver,
 		names[i] = d.Name
 	}
 
-	// Инспектируем только таблицы sorm: дифф не предложит DROP чужого.
+	// Inspect only sorm tables: the diff will not propose dropping foreign ones.
 	current, err := drv.InspectSchema(ctx, "", &schema.InspectOptions{Tables: names})
 	if err != nil {
 		return nil, nil, fmt.Errorf("github.com/dvislobokov/sorm/migrate: inspect: %w", err)
@@ -113,12 +115,12 @@ func open(db *sql.DB, dialect string) (atlasmigrate.Driver, error) {
 	}
 }
 
-// buildSchema строит желаемую схему Atlas из sorm.TableDef.
+// buildSchema builds the desired Atlas schema from sorm.TableDef.
 func buildSchema(name string, defs []sorm.TableDef, dialect string) (*schema.Schema, error) {
 	s := schema.New(name)
 	tables := map[string]*schema.Table{}
 
-	// Первый проход: таблицы и колонки.
+	// First pass: tables and columns.
 	for _, def := range defs {
 		t := schema.NewTable(def.Name)
 		var pkCols []*schema.Column
@@ -129,7 +131,7 @@ func buildSchema(name string, defs []sorm.TableDef, dialect string) (*schema.Sch
 			}
 			t.AddColumns(col)
 			if c.PK {
-				pkCols = append(pkCols, col) // композитный PK поддержан
+				pkCols = append(pkCols, col) // composite PK is supported
 			}
 			if c.Unique {
 				t.AddIndexes(schema.NewUniqueIndex(def.Name + "_" + c.Name + "_key").AddColumns(col))
@@ -149,7 +151,7 @@ func buildSchema(name string, defs []sorm.TableDef, dialect string) (*schema.Sch
 		s.AddTables(t)
 	}
 
-	// Второй проход: FK (обе таблицы уже существуют).
+	// Second pass: FKs (both tables already exist).
 	for _, def := range defs {
 		t := tables[def.Name]
 		for _, c := range def.Columns {
@@ -204,7 +206,7 @@ func buildIndex(t *schema.Table, table string, ix sorm.IndexDef, dialect string)
 		case "mysql":
 			sx.AddAttrs(&mysql.IndexType{T: strings.ToUpper(ix.Type)})
 		default:
-			return nil, fmt.Errorf("github.com/dvislobokov/sorm/migrate: index %s: тип индекса не поддерживается на %s", ix.Name, dialect)
+			return nil, fmt.Errorf("github.com/dvislobokov/sorm/migrate: index %s: index type not supported on %s", ix.Name, dialect)
 		}
 	}
 	if ix.Where != "" {
@@ -214,7 +216,7 @@ func buildIndex(t *schema.Table, table string, ix sorm.IndexDef, dialect string)
 		case "sqlite":
 			sx.AddAttrs(&sqlite.IndexPredicate{P: ix.Where})
 		default:
-			return nil, fmt.Errorf("github.com/dvislobokov/sorm/migrate: index %s: частичные индексы не поддерживаются на %s", ix.Name, dialect)
+			return nil, fmt.Errorf("github.com/dvislobokov/sorm/migrate: index %s: partial indexes not supported on %s", ix.Name, dialect)
 		}
 	}
 	return sx, nil
@@ -230,7 +232,7 @@ func columnOf(t *schema.Table, name string) (*schema.Column, bool) {
 }
 
 func buildColumn(c sorm.ColumnDef, dialect string) (*schema.Column, error) {
-	// Atlas-парсеры типов ожидают нижний регистр ("varchar(36)", не "VARCHAR(36)").
+	// Atlas type parsers expect lower case ("varchar(36)", not "VARCHAR(36)").
 	typ := strings.ToLower(sorm.SQLTypeFor(dialect, c))
 
 	var col *schema.Column
@@ -239,8 +241,8 @@ func buildColumn(c sorm.ColumnDef, dialect string) (*schema.Column, error) {
 		col = newCol(c.Nullable, func() *schema.Column { return schema.NewBoolColumn(c.Name, typ) },
 			func() *schema.Column { return schema.NewNullBoolColumn(c.Name, typ) })
 	case "string":
-		// "varchar(36)" → тип "varchar" + размер отдельно: парсеры Atlas
-		// не принимают размер внутри имени типа.
+		// "varchar(36)" → type "varchar" + size separately: Atlas parsers
+		// do not accept the size inside the type name.
 		base, size := splitSized(typ)
 		var opts []schema.StringOption
 		if size > 0 {
@@ -255,8 +257,8 @@ func buildColumn(c sorm.ColumnDef, dialect string) (*schema.Column, error) {
 		col = newCol(c.Nullable, func() *schema.Column { return schema.NewTimeColumn(c.Name, typ) },
 			func() *schema.Column { return schema.NewNullTimeColumn(c.Name, typ) })
 	case "bytes":
-		col = schema.NewNullBinaryColumn(c.Name, typ) // []byte всегда nullable
-	default: // целочисленные
+		col = schema.NewNullBinaryColumn(c.Name, typ) // []byte is always nullable
+	default: // integer kinds
 		col = newCol(c.Nullable, func() *schema.Column { return schema.NewIntColumn(c.Name, typ) },
 			func() *schema.Column { return schema.NewNullIntColumn(c.Name, typ) })
 	}

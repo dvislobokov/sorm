@@ -8,7 +8,7 @@ import (
 	models "github.com/dvislobokov/sorm/internal/testmodels"
 )
 
-// Profile — типизированные дескрипторы колонок models.Profile.
+// Profile holds typed column descriptors for models.Profile.
 var Profile = struct {
 	ID     sorm.OrdCol[models.Profile, int64]
 	UserID sorm.OrdCol[models.Profile, int64]

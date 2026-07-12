@@ -17,11 +17,11 @@ import (
 	"github.com/dvislobokov/sorm/migrate"
 )
 
-// Микробенчмарки против raw database/sql на SQLite in-memory (без сети —
-// меряется overhead sorm, не БД). Запуск: go test -bench . -benchmem
+// Microbenchmarks against raw database/sql on in-memory SQLite (no network —
+// measures sorm overhead, not the DB). Run: go test -bench . -benchmem
 //
-// Полноценное сравнение с GORM/Ent/sqlc на PostgreSQL — отдельная задача
-// (см. efectn/go-orm-benchmarks).
+// A full comparison with GORM/Ent/sqlc on PostgreSQL is a separate task
+// (see efectn/go-orm-benchmarks).
 
 func benchDB(b *testing.B, rows int) (*sql.DB, sorm.DB) {
 	b.Helper()

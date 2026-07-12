@@ -1,7 +1,7 @@
-// Package ddl генерирует каноническую SQL-схему (CREATE TABLE) из
-// разобранной схемы моделей — вход для Atlas-workflow через файл
-// (`atlas migrate diff --to file://schema.sql`) и документация схемы.
-// Программные миграции из кода — sorm/migrate (Atlas SDK).
+// Package ddl generates the canonical SQL schema (CREATE TABLE) from
+// the parsed models schema — input for a file-based Atlas workflow
+// (`atlas migrate diff --to file://schema.sql`) and schema documentation.
+// Programmatic migrations from code — sorm/migrate (Atlas SDK).
 package ddl
 
 import (
@@ -13,8 +13,8 @@ import (
 	"github.com/dvislobokov/sorm/internal/parse"
 )
 
-// ColumnDefOf — конвертация поля схемы в рантаймовое описание колонки
-// (общий словарь ddl-генератора, кодогена и sorm/migrate).
+// ColumnDefOf converts a schema field into the runtime column definition
+// (the shared vocabulary of the ddl generator, codegen, and sorm/migrate).
 func ColumnDefOf(s *parse.Schema, f parse.Field) (sorm.ColumnDef, error) {
 	c := sorm.ColumnDef{
 		Name:     f.Col,
@@ -35,7 +35,7 @@ func ColumnDefOf(s *parse.Schema, f parse.Field) (sorm.ColumnDef, error) {
 	return c, nil
 }
 
-// TableDefOf — описание таблицы сущности.
+// TableDefOf returns the entity's table definition.
 func TableDefOf(s *parse.Schema, e parse.Entity) (sorm.TableDef, error) {
 	def := sorm.TableDef{Name: e.Table}
 	for _, f := range e.Fields {
@@ -51,8 +51,8 @@ func TableDefOf(s *parse.Schema, e parse.Entity) (sorm.TableDef, error) {
 	return def, nil
 }
 
-// Generate выдаёт DDL для диалекта: "postgres", "mysql", "sqlite".
-// Таблицы упорядочены так, чтобы родители шли раньше детей (FK).
+// Generate emits DDL for a dialect: "postgres", "mysql", "sqlite".
+// Tables are ordered so that parents come before children (FK).
 func Generate(s *parse.Schema, dialect string) (string, error) {
 	q, err := quoter(dialect)
 	if err != nil {
@@ -71,7 +71,7 @@ func Generate(s *parse.Schema, dialect string) (string, error) {
 		}
 		defs = append(defs, def)
 	}
-	// join-таблицы many2many — после сущностей (их FK уже существуют)
+	// many2many join tables come after the entities (their FKs already exist)
 	joins, err := JoinTableDefs(s)
 	if err != nil {
 		return "", err
@@ -116,8 +116,8 @@ func compositePK(def sorm.TableDef) []string {
 	return out
 }
 
-// JoinTableDefs — описания join-таблиц many2many (дедуп по имени;
-// колонки: snake(Entity)_id со ссылками на PK обеих сторон, композитный PK).
+// JoinTableDefs returns many2many join table definitions (deduplicated by name;
+// columns: snake(Entity)_id referencing both sides' PKs, composite PK).
 func JoinTableDefs(s *parse.Schema) ([]sorm.TableDef, error) {
 	byName := map[string]parse.Entity{}
 	for _, e := range s.Entities {
@@ -163,14 +163,14 @@ func columnDDL(c sorm.ColumnDef, dialect string, q func(string) string, composit
 
 	switch {
 	case c.PK && compositePK:
-		// PRIMARY KEY выносится в table-level constraint
+		// PRIMARY KEY moves to a table-level constraint
 		parts = append(parts, sorm.SQLTypeFor(dialect, c), "NOT NULL")
 	case c.PK && c.Auto:
 		switch dialect {
 		case "mysql":
 			parts = append(parts, sorm.SQLTypeFor(dialect, c), "AUTO_INCREMENT PRIMARY KEY")
 		case "sqlite":
-			// AUTOINCREMENT в SQLite работает только с INTEGER PRIMARY KEY.
+			// AUTOINCREMENT in SQLite works only with INTEGER PRIMARY KEY.
 			parts = append(parts, "INTEGER PRIMARY KEY AUTOINCREMENT")
 		default:
 			parts = append(parts, sorm.SQLTypeFor(dialect, c), "GENERATED ALWAYS AS IDENTITY PRIMARY KEY")
@@ -195,8 +195,8 @@ func columnDDL(c sorm.ColumnDef, dialect string, q func(string) string, composit
 	return strings.Join(parts, " ")
 }
 
-// IndexDDL — CREATE INDEX для одного IndexDef (доступно rantime-миграциям
-// и тестам).
+// IndexDDL — CREATE INDEX for a single IndexDef (available to runtime
+// migrations and tests).
 func IndexDDL(table string, ix sorm.IndexDef, dialect string) (string, error) {
 	q, err := quoter(dialect)
 	if err != nil {
@@ -205,8 +205,8 @@ func IndexDDL(table string, ix sorm.IndexDef, dialect string) (string, error) {
 	return indexDDL(table, ix, dialect, q)
 }
 
-// indexDDL — CREATE INDEX с поддержкой DESC, выражений, типа (USING gin /
-// FULLTEXT) и частичных индексов (WHERE).
+// indexDDL — CREATE INDEX with support for DESC, expressions, a type
+// (USING gin / FULLTEXT), and partial indexes (WHERE).
 func indexDDL(table string, ix sorm.IndexDef, dialect string, q func(string) string) (string, error) {
 	var parts []string
 	for _, p := range ix.IndexParts() {
@@ -226,7 +226,7 @@ func indexDDL(table string, ix sorm.IndexDef, dialect string, q func(string) str
 	using := ""
 	switch {
 	case ix.Unique && ix.Type != "":
-		return "", fmt.Errorf("index %s: unique несовместим с type", ix.Name)
+		return "", fmt.Errorf("index %s: unique is incompatible with type", ix.Name)
 	case ix.Unique:
 		kind = "UNIQUE INDEX"
 	case ix.Type != "":
@@ -236,7 +236,7 @@ func indexDDL(table string, ix sorm.IndexDef, dialect string, q func(string) str
 		case "mysql":
 			kind = strings.ToUpper(ix.Type) + " INDEX" // FULLTEXT INDEX / SPATIAL INDEX
 		default:
-			return "", fmt.Errorf("index %s: тип индекса не поддерживается на %s", ix.Name, dialect)
+			return "", fmt.Errorf("index %s: index type is not supported on %s", ix.Name, dialect)
 		}
 	}
 
@@ -244,7 +244,7 @@ func indexDDL(table string, ix sorm.IndexDef, dialect string, q func(string) str
 		kind, q(ix.Name), q(table), using, strings.Join(parts, ", "))
 	if ix.Where != "" {
 		if dialect == "mysql" {
-			return "", fmt.Errorf("index %s: частичные индексы не поддерживаются на mysql", ix.Name)
+			return "", fmt.Errorf("index %s: partial indexes are not supported on mysql", ix.Name)
 		}
 		stmt += " WHERE " + ix.Where
 	}
@@ -262,7 +262,7 @@ func quoter(dialect string) (func(string) string, error) {
 	}
 }
 
-// orderByFK — родители раньше детей (FK-ссылки должны существовать).
+// orderByFK — parents before children (FK references must exist).
 func orderByFK(entities []parse.Entity) []parse.Entity {
 	refs := map[string][]string{}
 	for _, e := range entities {

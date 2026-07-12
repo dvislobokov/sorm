@@ -29,7 +29,7 @@ func TestParentsBeforeChildren(t *testing.T) {
 		users := strings.Index(sql, "users")
 		posts := strings.Index(sql, "posts")
 		if users < 0 || posts < 0 || users > posts {
-			t.Errorf("%s: users должна идти раньше posts (fk)", d)
+			t.Errorf("%s: users must come before posts (fk)", d)
 		}
 	}
 }
@@ -43,10 +43,10 @@ func TestDialectSpecifics(t *testing.T) {
 		`"created_at" TIMESTAMPTZ NOT NULL`,
 		`"avatar" BYTEA NULL`,
 		`REFERENCES "users" ("id")`,
-		`"body" TEXT NOT NULL`, // тег type:text
+		`"body" TEXT NOT NULL`, // type:text tag
 	} {
 		if !strings.Contains(pg, want) {
-			t.Errorf("postgres: нет %q", want)
+			t.Errorf("postgres: missing %q", want)
 		}
 	}
 
@@ -57,28 +57,28 @@ func TestDialectSpecifics(t *testing.T) {
 		"`created_at` DATETIME(6) NOT NULL",
 	} {
 		if !strings.Contains(my, want) {
-			t.Errorf("mysql: нет %q", want)
+			t.Errorf("mysql: missing %q", want)
 		}
 	}
 
 	lite, _ := ddl.Generate(s, "sqlite")
 	if !strings.Contains(lite, `"id" INTEGER PRIMARY KEY AUTOINCREMENT`) {
-		t.Error("sqlite: auto-PK должен быть INTEGER PRIMARY KEY AUTOINCREMENT")
+		t.Error("sqlite: auto-PK must be INTEGER PRIMARY KEY AUTOINCREMENT")
 	}
 
 	if _, err := ddl.Generate(s, "oracle"); err == nil {
-		t.Error("неизвестный диалект должен давать ошибку")
+		t.Error("unknown dialect must return an error")
 	}
 }
 
 func TestCustomIndexDDL(t *testing.T) {
 	s := loadTestSchema(t)
 
-	// Метод Indexes() у User виден парсеру (флаг), но исполняется только
-	// сгенерированным кодом; DDL для проверки экзотики строим напрямую.
+	// The parser only sees User's Indexes() method as a flag; it is executed
+	// by generated code only, so exotic-index DDL is built directly here.
 	for _, e := range s.Entities {
 		if e.Name == "User" && !e.HasIndexesMethod {
-			t.Error("HasIndexesMethod не детектирован")
+			t.Error("HasIndexesMethod not detected")
 		}
 	}
 
@@ -86,9 +86,9 @@ func TestCustomIndexDDL(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// теговый композитный индекс присутствует
+	// the tag-defined composite index is present
 	if !strings.Contains(pg, `CREATE INDEX "idx_posts_author_title" ON "posts" ("author_id", "title");`) {
-		t.Errorf("нет композитного индекса:\n%s", pg)
+		t.Errorf("composite index missing:\n%s", pg)
 	}
 }
 
@@ -121,7 +121,7 @@ func TestExoticIndexRendering(t *testing.T) {
 		got, err := ddl.IndexDDL("posts", c.ix, c.dialect)
 		if c.wantErr {
 			if err == nil {
-				t.Errorf("%s/%s: ожидали ошибку", c.dialect, c.ix.Name)
+				t.Errorf("%s/%s: expected an error", c.dialect, c.ix.Name)
 			}
 			continue
 		}

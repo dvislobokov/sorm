@@ -1,8 +1,8 @@
-// Пример sorm: типизированные запросы по сгенерированным дескрипторам.
+// sorm example: typed queries over generated descriptors.
 //
-// Без переменных окружения печатает SQL (ToSQL — инспекция без БД).
-// С SORM_DSN (postgres://user:pass@host:5432/db) выполняет живой прогон:
-// создаёт таблицы, сеет данные и делает запросы.
+// Without environment variables it prints SQL (ToSQL — inspection without a DB).
+// With SORM_DSN (postgres://user:pass@host:5432/db) it performs a live run:
+// creates tables, seeds data and runs queries.
 package main
 
 import (
@@ -33,13 +33,13 @@ var (
 )
 
 func main() {
-	fmt.Println("== 1. Инспекция SQL без БД ==")
+	fmt.Println("== 1. SQL inspection without a DB ==")
 	demoToSQL()
 
 	dsn := os.Getenv("SORM_DSN")
 	if dsn == "" {
-		fmt.Println("\nSORM_DSN не задан — живой прогон пропущен.")
-		fmt.Println("Пример: $env:SORM_DSN = 'postgres://postgres:postgres@localhost:5432/sorm_example'")
+		fmt.Println("\nSORM_DSN is not set — live run skipped.")
+		fmt.Println("Example: $env:SORM_DSN = 'postgres://postgres:postgres@localhost:5432/sorm_example'")
 		return
 	}
 	if err := live(context.Background(), dsn); err != nil {
@@ -48,12 +48,12 @@ func main() {
 }
 
 func demoToSQL() {
-	// Zero-values — полноценные условия (в GORM Active=false молча исчезло бы).
+	// Zero values are first-class conditions (in GORM Active=false would silently disappear).
 	q := sorm.Query[models.Author](nil).
 		Where(a.Active.Eq(false), a.Rating.Eq(0))
 	printSQL(q.ToSQL())
 
-	// Динамическая композиция условий — то, что не может sqlc.
+	// Dynamic condition composition — something sqlc cannot do.
 	minRating := 4.5
 	search := "S"
 	q2 := sorm.Query[models.Author](nil).Where(a.Active.Eq(true))
@@ -65,13 +65,13 @@ func demoToSQL() {
 	}
 	printSQL(q2.OrderBy(a.Rating.Desc()).Limit(10).ToSQL())
 
-	// Билдер иммутабелен: base не «загрязняется» производными запросами.
+	// The builder is immutable: base is not "polluted" by derived queries.
 	base := sorm.Query[models.Article](nil).Where(ar.Views.Gt(100))
 	fresh := base.Where(ar.PublishedAt.IsNotNull())
 	printSQL(base.ToSQL())
 	printSQL(fresh.ToSQL())
 
-	// Фильтр родителя по детям: EXISTS вместо JOIN-дубликатов.
+	// Filtering parents by their children: EXISTS instead of JOIN duplicates.
 	printSQL(sorm.Query[models.Author](nil).
 		Where(a.Articles.Any(ar.Views.Gte(1000))).
 		ToSQL())
@@ -83,13 +83,13 @@ func live(ctx context.Context, dsn string) error {
 		return err
 	}
 	defer pool.Close()
-	db := pgxd.Wrap(pool) // единственная точка привязки к драйверу
+	db := pgxd.Wrap(pool) // the single driver binding point
 
 	if err := seed(ctx, db); err != nil {
 		return err
 	}
 
-	fmt.Println("\n== 2. Живые запросы ==")
+	fmt.Println("\n== 2. Live queries ==")
 
 	active, err := sorm.Query[models.Author](db).
 		Where(a.Active.Eq(true)).
@@ -99,22 +99,22 @@ func live(ctx context.Context, dsn string) error {
 		return err
 	}
 	for _, au := range active {
-		fmt.Printf("автор: %-8s rating=%.1f\n", au.Name, au.Rating)
+		fmt.Printf("author: %-8s rating=%.1f\n", au.Name, au.Rating)
 	}
 
 	popular, err := sorm.Query[models.Article](db).Where(ar.Views.Gte(1000)).Count(ctx)
 	if err != nil {
 		return err
 	}
-	fmt.Println("статей с 1000+ просмотров:", popular)
+	fmt.Println("articles with 1000+ views:", popular)
 
-	_, err = sorm.Query[models.Author](db).Where(a.Name.Eq("нет такого")).One(ctx)
-	fmt.Println("One по несуществующему:", err) // sorm: not found — единая семантика
+	_, err = sorm.Query[models.Author](db).Where(a.Name.Eq("no such author")).One(ctx)
+	fmt.Println("One on a missing row:", err) // sorm: not found — uniform semantics
 
-	fmt.Println("\n== 3. Eager loading (Include, split-стратегия) ==")
+	fmt.Println("\n== 3. Eager loading (Include, split strategy) ==")
 
-	// Авторы, у которых есть статья с 1000+ просмотров, вместе с
-	// опубликованными статьями каждого.
+	// Authors who have an article with 1000+ views, together with
+	// each author's published articles.
 	authors, err := sorm.Query[models.Author](db).
 		Where(a.Articles.Any(ar.Views.Gte(1000))).
 		With(a.Articles.Include(ar.PublishedAt.IsNotNull())).
@@ -124,13 +124,13 @@ func live(ctx context.Context, dsn string) error {
 		return err
 	}
 	for _, au := range authors {
-		fmt.Printf("%s (%d опубл. статей):\n", au.Name, len(au.Articles))
+		fmt.Printf("%s (%d published articles):\n", au.Name, len(au.Articles))
 		for _, art := range au.Articles {
 			fmt.Printf("  - %-24s views=%d\n", art.Title, art.Views)
 		}
 	}
 
-	// Загруженная пустая связь — пустой слайс, НЕ nil («забыл Include» отличим от «нет данных»).
+	// A loaded empty relation is an empty slice, NOT nil ("forgot Include" is distinguishable from "no data").
 	all, err := sorm.Query[models.Author](db).With(a.Articles.Include()).All(ctx)
 	if err != nil {
 		return err
@@ -142,25 +142,25 @@ func live(ctx context.Context, dsn string) error {
 	return session(ctx, db)
 }
 
-// session — главный дифференциатор sorm: Unit of Work с change tracking.
+// session — sorm's main differentiator: Unit of Work with change tracking.
 func session(ctx context.Context, db sorm.DB) error {
-	fmt.Println("\n== 4. Сессия: Unit of Work ==")
+	fmt.Println("\n== 4. Session: Unit of Work ==")
 
-	// Новый граф: FK задаётся навигацией, порядок вставки и fixup — за sorm.
+	// A new graph: FKs come from navigation; insert order and fixup are handled by sorm.
 	s := sorm.NewSession(db)
 	max := &models.Author{Name: "Max", Email: "max@x.io", Active: true, Rating: 4.0, JoinedAt: time.Now()}
-	art1 := &models.Article{Author: max, Title: "Снапшот-трекинг в Go", Views: 0}
-	art2 := &models.Article{Author: max, Title: "pgx.Batch на практике", Views: 0}
+	art1 := &models.Article{Author: max, Title: "Snapshot tracking in Go", Views: 0}
+	art2 := &models.Article{Author: max, Title: "pgx.Batch in practice", Views: 0}
 	sorm.Add(s, max)
 	sorm.Add(s, art1, art2)
 	if err := s.SaveChanges(ctx); err != nil {
 		return err
 	}
-	fmt.Printf("вставлен граф: author.id=%d, статьи fk=[%d %d] (RETURNING + fixup)\n",
+	fmt.Printf("graph inserted: author.id=%d, article fk=[%d %d] (RETURNING + fixup)\n",
 		max.ID, art1.AuthorID, art2.AuthorID)
 
-	// Track → мутация обычным Go-кодом → SaveChanges: UPDATE только
-	// изменённых колонок, version-предикат бесплатно.
+	// Track → mutate with plain Go code → SaveChanges: UPDATE only the
+	// changed columns, version predicate for free.
 	s2 := sorm.NewSession(db)
 	loaded, err := sorm.Track[models.Author](s2).
 		Where(gen.Author.Email.Eq("max@x.io")).
@@ -169,15 +169,15 @@ func session(ctx context.Context, db sorm.DB) error {
 	if err != nil {
 		return err
 	}
-	loaded.Rating = 4.9                    // изменили автора
-	loaded.Articles[0].Views = 100         // и ребёнка, загруженного Include
+	loaded.Rating = 4.9                    // changed the author
+	loaded.Articles[0].Views = 100         // and a child loaded via Include
 	if err := s2.SaveChanges(ctx); err != nil {
 		return err
 	}
-	fmt.Printf("update: rating=%.1f (version %d), article views=%d — один roundtrip\n",
+	fmt.Printf("update: rating=%.1f (version %d), article views=%d — one roundtrip\n",
 		loaded.Rating, loaded.Version, loaded.Articles[0].Views)
 
-	// Optimistic concurrency: конкурентное изменение → типизированный конфликт.
+	// Optimistic concurrency: a concurrent modification → typed conflict.
 	sA, sB := sorm.NewSession(db), sorm.NewSession(db)
 	mA, _ := sorm.Track[models.Author](sA).Where(gen.Author.Email.Eq("max@x.io")).One(ctx)
 	mB, _ := sorm.Track[models.Author](sB).Where(gen.Author.Email.Eq("max@x.io")).One(ctx)
@@ -189,10 +189,10 @@ func session(ctx context.Context, db sorm.DB) error {
 	err = sB.SaveChanges(ctx)
 	var conflict *sorm.ConflictError
 	if errors.As(err, &conflict) {
-		fmt.Printf("конкурентное изменение поймано: %v\n", conflict)
+		fmt.Printf("concurrent modification caught: %v\n", conflict)
 	}
 
-	// Remove: дети удаляются раньше родителя автоматически.
+	// Remove: children are deleted before the parent automatically.
 	s3 := sorm.NewSession(db)
 	gone, err := sorm.Track[models.Author](s3).
 		Where(gen.Author.Email.Eq("max@x.io")).
@@ -206,18 +206,18 @@ func session(ctx context.Context, db sorm.DB) error {
 	if err := s3.SaveChanges(ctx); err != nil {
 		return err
 	}
-	fmt.Println("автор и статьи удалены одним SaveChanges (порядок — за sorm)")
+	fmt.Println("author and articles deleted in a single SaveChanges (ordering handled by sorm)")
 
 	return setBasedAndRaw(ctx, db)
 }
 
-// setBasedAndRaw — операции без сессии: массовые UPDATE/DELETE и raw-escape.
+// setBasedAndRaw — sessionless operations: bulk UPDATE/DELETE and the raw escape hatch.
 func setBasedAndRaw(ctx context.Context, db sorm.DB) error {
-	fmt.Println("\n== 5. Set-based операции и raw SQL ==")
+	fmt.Println("\n== 5. Set-based operations and raw SQL ==")
 
-	// Массовый UPDATE: типизированные присваивания, автоинкремент version.
-	// Update без Where не скомпилируется в ошибку молча — вернёт guard-ошибку,
-	// полная таблица только через явный AllRows().
+	// Bulk UPDATE: typed assignments, automatic version increment.
+	// Update without Where does not fail silently — it returns a guard error;
+	// touching the whole table requires an explicit AllRows().
 	n, err := sorm.Update[models.Article](db).
 		Set(gen.Article.Views.Set(0)).
 		Where(gen.Article.PublishedAt.IsNull()).
@@ -225,9 +225,9 @@ func setBasedAndRaw(ctx context.Context, db sorm.DB) error {
 	if err != nil {
 		return err
 	}
-	fmt.Printf("обнулены просмотры у %d черновиков\n", n)
+	fmt.Printf("views reset for %d drafts\n", n)
 
-	// Raw в сущности: несоответствие колонок — ScanError, не полупустой объект.
+	// Raw into an entity: a column mismatch is a ScanError, not a half-empty object.
 	top, err := sorm.Raw[models.Article](db,
 		`SELECT * FROM articles WHERE views >= $1 ORDER BY views DESC`, 1000).All(ctx)
 	if err != nil {
@@ -237,7 +237,7 @@ func setBasedAndRaw(ctx context.Context, db sorm.DB) error {
 		fmt.Printf("raw: %-24s views=%d\n", art.Title, art.Views)
 	}
 
-	// RawAs в произвольную структуру: агрегаты, которые не форма сущности.
+	// RawAs into an arbitrary struct: aggregates that don't match an entity shape.
 	type authorStat struct {
 		Name     string
 		Articles int64 `sorm:"n"`
@@ -251,19 +251,19 @@ func setBasedAndRaw(ctx context.Context, db sorm.DB) error {
 		return err
 	}
 	for _, st := range stats {
-		fmt.Printf("stat: %-8s статей=%d max=%d\n", st.Name, st.Articles, st.MaxViews)
+		fmt.Printf("stat: %-8s articles=%d max=%d\n", st.Name, st.Articles, st.MaxViews)
 	}
 
 	return projections(ctx, db)
 }
 
-// projections — типизированные GROUP BY/HAVING/JOIN без строк SQL.
+// projections — typed GROUP BY/HAVING/JOIN without SQL strings.
 func projections(ctx context.Context, db sorm.DB) error {
-	fmt.Println("\n== 6. Проекции: типизированные агрегации и JOIN ==")
+	fmt.Println("\n== 6. Projections: typed aggregations and JOINs ==")
 
-	// Тот же агрегат, что в raw-секции, но проверенный компилятором:
-	// опечатка в колонке или несовпадение структуры результата — ошибка
-	// до похода в БД.
+	// The same aggregate as in the raw section, but compiler-checked:
+	// a typo in a column name or a mismatched result struct is an error
+	// before ever hitting the DB.
 	type authorStat struct {
 		Name     string
 		N        int64
@@ -283,10 +283,10 @@ func projections(ctx context.Context, db sorm.DB) error {
 		return err
 	}
 	for _, st := range stats {
-		fmt.Printf("proj: %-8s статей=%d max=%d\n", st.Name, st.N, st.MaxViews)
+		fmt.Printf("proj: %-8s articles=%d max=%d\n", st.Name, st.N, st.MaxViews)
 	}
 
-	// LEFT JOIN по связи: авторы без статей тоже в результате (count = 0).
+	// LEFT JOIN via the relation: authors without articles are included too (count = 0).
 	type withCount struct {
 		Name string
 		N    int64
@@ -303,17 +303,18 @@ func projections(ctx context.Context, db sorm.DB) error {
 		return err
 	}
 	for _, row := range all {
-		fmt.Printf("left join: %-8s статей=%d\n", row.Name, row.N)
+		fmt.Printf("left join: %-8s articles=%d\n", row.Name, row.N)
 	}
 
 	return multiDialect(ctx)
 }
 
-// multiDialect — тот же код sorm поверх SQLite in-memory: меняется только
-// адаптер (sqld.Wrap вместо pgxd.Wrap). MySQL — так же, с dialect/my.
-// Схему создают миграции из кода (Atlas SDK): никакого рукописного DDL.
+// multiDialect — the same sorm code on top of in-memory SQLite: only the
+// adapter changes (sqld.Wrap instead of pgxd.Wrap). MySQL works the same way,
+// with dialect/my. The schema is created by migrations from code (Atlas SDK):
+// no handwritten DDL.
 func multiDialect(ctx context.Context) error {
-	fmt.Println("\n== 7. Мультидиалектность + миграции из кода (SQLite in-memory) ==")
+	fmt.Println("\n== 7. Multi-dialect + migrations from code (in-memory SQLite) ==")
 
 	sdb, err := sql.Open("sqlite", ":memory:")
 	if err != nil {
@@ -322,21 +323,21 @@ func multiDialect(ctx context.Context) error {
 	defer sdb.Close()
 	sdb.SetMaxOpenConns(1)
 
-	// Желаемая схема — из моделей (sormgen регистрирует TableDef);
-	// Atlas инспектирует БД и применяет дифф.
+	// The desired schema comes from the models (sormgen registers TableDef);
+	// Atlas inspects the DB and applies the diff.
 	plan, err := migrate.Plan(ctx, sdb, "sqlite")
 	if err != nil {
 		return err
 	}
-	fmt.Printf("migrate.Plan: %d statement(s), например: %s\n", len(plan), plan[0])
+	fmt.Printf("migrate.Plan: %d statement(s), e.g.: %s\n", len(plan), plan[0])
 	if err := migrate.Apply(ctx, sdb, "sqlite"); err != nil {
 		return err
 	}
 	if again, _ := migrate.Plan(ctx, sdb, "sqlite"); len(again) == 0 {
-		fmt.Println("migrate.Apply применён; повторный Plan пуст — схема в синхроне")
+		fmt.Println("migrate.Apply done; a repeated Plan is empty — schema is in sync")
 	}
 
-	db := sqld.Wrap(sdb, lite.Dialect{}) // единственное отличие от PG-пути
+	db := sqld.Wrap(sdb, lite.Dialect{}) // the only difference from the PG path
 
 	s := sorm.NewSession(db)
 	lo := &models.Author{Name: "Lo", Email: "lo@x.io", Active: true, Rating: 3.3, JoinedAt: time.Now()}
@@ -352,18 +353,18 @@ func multiDialect(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	fmt.Printf("SQLite: автор %s (id=%d через LastInsertId), version=%d — тот же код, другой драйвер\n",
+	fmt.Printf("SQLite: author %s (id=%d via LastInsertId), version=%d — same code, different driver\n",
 		found.Name, found.ID, found.Version)
 
 	return versionedMigrations(ctx)
 }
 
-// versionedMigrations — файловые миграции из кода: Diff пишет версионный
-// *.sql (scratch-БД для replay — своя, тут in-memory SQLite), Up применяет
-// его к целевой БД и ведёт таблицу истории sorm_migrations.
-// Никаких внешних инструментов и docker-магии.
+// versionedMigrations — file-based migrations from code: Diff writes a
+// versioned *.sql (you provide the scratch DB for replay — here an in-memory
+// SQLite), Up applies it to the target DB and maintains the sorm_migrations
+// history table. No external tools and no docker magic.
 func versionedMigrations(ctx context.Context) error {
-	fmt.Println("\n== 8. Версионные миграции из кода ==")
+	fmt.Println("\n== 8. Versioned migrations from code ==")
 
 	dir := filepath.Join(os.TempDir(), "sorm-blog-migrations")
 	_ = os.RemoveAll(dir)
@@ -379,7 +380,7 @@ func versionedMigrations(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	fmt.Println("создан файл миграции:", fname)
+	fmt.Println("migration file created:", fname)
 
 	target, err := sql.Open("sqlite", ":memory:")
 	if err != nil {
@@ -392,12 +393,12 @@ func versionedMigrations(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	fmt.Printf("применено файлов: %d; повторный Up: ", len(applied))
+	fmt.Printf("files applied: %d; repeated Up: ", len(applied))
 	again, err := migrate.Up(ctx, target, "sqlite", dir)
 	if err != nil {
 		return err
 	}
-	fmt.Printf("%d (история в таблице %s)\n", len(again), migrate.HistoryTable)
+	fmt.Printf("%d (history in table %s)\n", len(again), migrate.HistoryTable)
 	return nil
 }
 
@@ -427,8 +428,8 @@ func seed(ctx context.Context, db sorm.DB) error {
 			('Dorm',  'dorm@x.io',  false, 3.0, now(), 1)`,
 		`INSERT INTO articles (author_id, title, views, published_at) VALUES
 			(1, 'Go generics deep dive', 5000, now()),
-			(1, 'Черновик',              10,   NULL),
-			(2, 'Unit of Work в Go',     1500, now())`,
+			(1, 'Draft',                 10,   NULL),
+			(2, 'Unit of Work in Go',    1500, now())`,
 	}
 	for _, s := range stmts {
 		if _, err := db.Exec(ctx, s); err != nil {

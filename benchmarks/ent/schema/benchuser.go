@@ -1,4 +1,4 @@
-// Package schema — Ent-схема, эквивалентная моделям бенчмарка.
+// Package schema — an Ent schema equivalent to the benchmark models.
 package schema
 
 import (

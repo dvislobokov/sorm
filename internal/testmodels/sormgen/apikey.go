@@ -8,7 +8,7 @@ import (
 	models "github.com/dvislobokov/sorm/internal/testmodels"
 )
 
-// ApiKey — типизированные дескрипторы колонок models.ApiKey.
+// ApiKey holds typed column descriptors for models.ApiKey.
 var ApiKey = struct {
 	ID     sorm.StrCol[models.ApiKey]
 	UserID sorm.OrdCol[models.ApiKey, int64]

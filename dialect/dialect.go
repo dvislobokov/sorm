@@ -1,18 +1,19 @@
-// Package dialect определяет минимальную поверхность различий между СУБД.
-// MVP реализует только PostgreSQL (dialect/pg); MySQL и SQLite добавляются
-// реализацией этого интерфейса без изменения рантайма.
+// Package dialect defines the minimal surface of differences between databases.
+// The MVP implements only PostgreSQL (dialect/pg); MySQL and SQLite are added
+// by implementing this interface without changing the runtime.
 package dialect
 
-// Dialect отвечает за текстовые различия SQL; стратегия батчирования живёт
-// в драйверных адаптерах.
+// Dialect covers textual SQL differences; the batching strategy lives
+// in the driver adapters.
 type Dialect interface {
-	// Name — имя диалекта: "postgres", "mysql", "sqlite".
+	// Name is the dialect name: "postgres", "mysql", "sqlite".
 	Name() string
-	// Placeholder возвращает плейсхолдер n-го аргумента (нумерация с 1): $1 или ?.
+	// Placeholder returns the placeholder for the n-th argument (1-based): $1 or ?.
 	Placeholder(n int) string
-	// QuoteIdent экранирует идентификатор (таблицу, колонку).
+	// QuoteIdent quotes an identifier (table, column).
 	QuoteIdent(s string) string
-	// ReturningSupported — INSERT ... RETURNING доступен (PG; MySQL — нет,
-	// SQLite — намеренно LastInsertId-путь, общий с MySQL).
+	// ReturningSupported reports whether INSERT ... RETURNING is available
+	// (PG: yes; MySQL: no; SQLite: intentionally uses the LastInsertId path
+	// shared with MySQL).
 	ReturningSupported() bool
 }

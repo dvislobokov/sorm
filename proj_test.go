@@ -51,7 +51,7 @@ func TestProjectJoinToSQL(t *testing.T) {
 			Join(u.Posts.LeftJoin()).
 			GroupBy(u.Name),
 		sorm.Field(u.Name),
-		sorm.As(sorm.Count[models.User](p.ID), "n"), // считаем по колонке ребёнка
+		sorm.As(sorm.Count[models.User](p.ID), "n"), // count over a child column
 	)
 	sql, _, err := q.ToSQL()
 	if err != nil {
@@ -72,9 +72,9 @@ func TestProjectArbitraryJoin(t *testing.T) {
 	p := gen.Post
 	q := sorm.Project[row](
 		sorm.From[models.User](nil).
-			Join(sorm.InnerJoinOn(sorm.ColEq(p.ID, u.ID))), // типы значений совпадают — компилируется
+			Join(sorm.InnerJoinOn(sorm.ColEq(p.ID, u.ID))), // value types match — compiles
 		sorm.Field(u.Email),
-		sorm.FieldOf[models.User](p.Title), // колонка присоединённой сущности
+		sorm.FieldOf[models.User](p.Title), // column of the joined entity
 	)
 	sql, _, err := q.ToSQL()
 	if err != nil {
@@ -88,20 +88,20 @@ func TestProjectArbitraryJoin(t *testing.T) {
 func TestAggregateInWhereRejected(t *testing.T) {
 	q := sorm.Project[ageStatP](
 		sorm.From[models.User](nil).
-			Where(sorm.CountAll[models.User]().Gt(1)), // агрегат в Where — ошибка
+			Where(sorm.CountAll[models.User]().Gt(1)), // aggregate in Where is an error
 		sorm.Field(u.Age),
 		sorm.As(sorm.CountAll[models.User](), "n"),
 	)
 	_, _, err := q.ToSQL()
 	if err == nil || !strings.Contains(err.Error(), "Having") {
-		t.Fatalf("ожидали ошибку про Having, получили %v", err)
+		t.Fatalf("expected an error mentioning Having, got %v", err)
 	}
 }
 
 func TestProjectStrictMapping(t *testing.T) {
 	type wrong struct {
 		Age   int
-		Bogus string // нет соответствующего выражения
+		Bogus string // no matching expression
 	}
 	q := sorm.Project[wrong](
 		sorm.From[models.User](nil).GroupBy(u.Age),
@@ -135,7 +135,7 @@ func TestProjectIntegration(t *testing.T) {
 		t.Fatalf("stats = %+v", stats)
 	}
 
-	// LEFT JOIN по связи: авторы с числом постов, включая нулевые.
+	// LEFT JOIN over a relation: authors with post counts, including zero.
 	type authorPosts struct {
 		Name string
 		N    int64 `sorm:"n"`
@@ -156,6 +156,6 @@ func TestProjectIntegration(t *testing.T) {
 		for _, r := range rows {
 			t.Logf("%+v", r)
 		}
-		t.Fatal("неожиданный результат LEFT JOIN проекции")
+		t.Fatal("unexpected LEFT JOIN projection result")
 	}
 }

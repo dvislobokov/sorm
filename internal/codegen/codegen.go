@@ -1,6 +1,6 @@
-// Package codegen генерирует пакет sormgen из разобранной схемы:
-// типизированные дескрипторы колонок, мету с пополевыми Scan/Snapshot/Diff
-// (ноль рефлексии в рантайме) — компактно и diff-friendly.
+// Package codegen generates the sormgen package from the parsed schema:
+// typed column descriptors and meta with per-field Scan/Snapshot/Diff
+// (zero reflection at runtime) — compact and diff-friendly.
 package codegen
 
 import (
@@ -13,7 +13,7 @@ import (
 	"github.com/dvislobokov/sorm/internal/parse"
 )
 
-// Generate возвращает файлы сгенерированного пакета: имя файла → содержимое.
+// Generate returns the generated package files: file name → contents.
 func Generate(s *parse.Schema) (map[string][]byte, error) {
 	out := map[string][]byte{}
 	for _, e := range s.Entities {
@@ -23,13 +23,13 @@ func Generate(s *parse.Schema) (map[string][]byte, error) {
 		}
 		formatted, err := format.Source(src)
 		if err != nil {
-			// Ошибка форматирования = баг генератора; показываем сырой код для отладки.
+			// A formatting error means a generator bug; show the raw code for debugging.
 			return nil, fmt.Errorf("%s: generated code does not parse: %w\n%s", e.Name, err, src)
 		}
 		out[strings.ToLower(e.Name)+".go"] = formatted
 	}
 
-	// join-таблицы many2many: регистрация TableDef для миграций
+	// many2many join tables: register TableDefs for migrations
 	joins, err := ddl.JoinTableDefs(s)
 	if err != nil {
 		return nil, err
@@ -99,8 +99,8 @@ func genEntity(s *parse.Schema, e parse.Entity) ([]byte, error) {
 
 	entT := "models." + e.Name
 
-	// --- дескрипторы колонок и связей ---
-	g.pf("// %s — типизированные дескрипторы колонок %s.\nvar %s = struct {\n", e.Name, entT, e.Name)
+	// --- column and relation descriptors ---
+	g.pf("// %s holds typed column descriptors for %s.\nvar %s = struct {\n", e.Name, entT, e.Name)
 	for _, f := range e.Fields {
 		g.pf("\t%s %s\n", f.GoName, descType(entT, f))
 	}
@@ -173,7 +173,7 @@ func genEntity(s *parse.Schema, e parse.Entity) ([]byte, error) {
 	}
 	g.pf("}\n\n")
 
-	// --- снапшот ---
+	// --- snapshot ---
 	g.pf("type %sSnap struct {\n", lname)
 	for i, f := range e.Fields {
 		if i == e.PKIndex || i == e.VersionIndex {
@@ -183,10 +183,10 @@ func genEntity(s *parse.Schema, e parse.Entity) ([]byte, error) {
 	}
 	g.pf("}\n\n")
 
-	// --- мета ---
+	// --- meta ---
 	g.pf("func init() {\n\tsorm.Register(%sMeta)\n\tsorm.RegisterTable(%sTableDef)\n}\n\n", lname, lname)
 
-	// --- описание таблицы для миграций (sorm/migrate, sorm schema) ---
+	// --- table definition for migrations (sorm/migrate, sorm schema) ---
 	tdef, err := ddl.TableDefOf(s, e)
 	if err != nil {
 		return nil, err
@@ -217,7 +217,7 @@ func genEntity(s *parse.Schema, e parse.Entity) ([]byte, error) {
 	g.pf("\t},\n")
 	if len(tdef.Indexes) > 0 || e.HasIndexesMethod {
 		if e.HasIndexesMethod {
-			// кастомные индексы модели (метод Indexes) объединяются с тегами
+			// the model's custom indexes (Indexes method) are merged with tag-defined ones
 			g.pf("\tIndexes: append([]sorm.IndexDef{\n")
 		} else {
 			g.pf("\tIndexes: []sorm.IndexDef{\n")
@@ -307,7 +307,7 @@ func genEntity(s *parse.Schema, e parse.Entity) ([]byte, error) {
 		g.pf("\tSetVersion: func(e *%s, v int64) { e.%s = v },\n", entT, vf)
 	}
 
-	// Refs: belongsTo-навигации — рёбра топосорта по экземплярам и FK-fixup.
+	// Refs: belongsTo navigations — instance topo-sort edges and FK fixup.
 	belongs := relationsOf(e, "belongsTo")
 	if len(belongs) > 0 {
 		g.pf("\tRefs: []sorm.Ref[%s]{\n", entT)
@@ -374,8 +374,8 @@ func snapType(f parse.Field) string {
 	return t
 }
 
-// snapExpr — выражение снапшота поля: клонирование указателей, отбрасывание
-// monotonic у time.Time, копирование []byte.
+// snapExpr — snapshot expression for a field: clone pointers, strip the
+// monotonic clock from time.Time, copy []byte.
 func snapExpr(f parse.Field) string {
 	src := "e." + f.GoName
 	switch {
@@ -392,8 +392,8 @@ func snapExpr(f parse.Field) string {
 	}
 }
 
-// diffCond — условие «поле изменилось»: bytes.Equal для []byte, .Equal для
-// time.Time, помощники для указателей — наивный != тут даёт панику или фантомы.
+// diffCond — "field changed" condition: bytes.Equal for []byte, .Equal for
+// time.Time, helpers for pointers — a naive != here panics or yields phantom diffs.
 func diffCond(f parse.Field) string {
 	snap, cur := "snap."+snapField(f), "e."+f.GoName
 	switch {
@@ -450,7 +450,7 @@ func entityByName(s *parse.Schema, name string) (parse.Entity, bool) {
 	return parse.Entity{}, false
 }
 
-// zeroExpr — литерал нулевого значения FK-колонки для FKIsZero.
+// zeroExpr — zero-value literal of the FK column for FKIsZero.
 func zeroExpr(f parse.Field) string {
 	if f.Nullable {
 		return "nil"
@@ -459,7 +459,7 @@ func zeroExpr(f parse.Field) string {
 	case f.TypeExpr == "string":
 		return `""`
 	default:
-		return "0" // числовые FK; иные типы FK вне MVP
+		return "0" // numeric FKs; other FK types are out of MVP scope
 	}
 }
 
@@ -471,7 +471,7 @@ func quotedList(items []string) string {
 	return strings.Join(parts, ", ")
 }
 
-// fkColOf — имя FK-колонки на целевой («многие») стороне hasMany.
+// fkColOf — FK column name on the target ("many") side of hasMany.
 func fkColOf(s *parse.Schema, r parse.Relation) (string, error) {
 	for _, e := range s.Entities {
 		if e.Name != r.Target {

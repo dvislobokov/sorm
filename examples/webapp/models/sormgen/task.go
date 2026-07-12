@@ -10,7 +10,7 @@ import (
 	models "github.com/dvislobokov/sorm/examples/webapp/models"
 )
 
-// Task — типизированные дескрипторы колонок models.Task.
+// Task holds typed column descriptors for models.Task.
 var Task = struct {
 	ID        sorm.OrdCol[models.Task, int64]
 	UserID    sorm.OrdCol[models.Task, int64]

@@ -10,18 +10,18 @@ import (
 	"github.com/dvislobokov/sorm/dialect"
 )
 
-// flushPlan — собранный план записи: statements и граф зависимостей вставок.
+// flushPlan — the assembled write plan: statements and the insert dependency graph.
 type flushPlan struct {
 	d dialect.Dialect
-	// addedSet — все Added-указатели всех типов (для распознавания рёбер).
+	// addedSet — all Added pointers of all types (for edge detection).
 	addedSet map[any]bool
 	deletes  []planStmt
 	updates  []planStmt
-	inserts  map[any]*insertNode // ключ — указатель на сущность
+	inserts  map[any]*insertNode // keyed by entity pointer
 	seq      int
-	// tableRefs: таблица → таблицы, на которые она ссылается (порядок DELETE).
+	// tableRefs: table → tables it references (DELETE ordering).
 	tableRefs map[string][]string
-	// post — бухгалтерия трекеров после успешного применения.
+	// post — tracker bookkeeping after a successful apply.
 	post []func()
 }
 
@@ -33,11 +33,11 @@ type planStmt struct {
 type insertNode struct {
 	seq        int
 	table      string
-	deps       []any // указатели на Added-родителей
+	deps       []any // pointers to Added parents
 	auto       bool
 	pkCol      string
 	insertCols []string
-	// values вызывается после вставки родителей: FK-fixup внутри.
+	// values is called after the parents are inserted: FK fixup happens inside.
 	values func() []any
 	setPK  func(int64)
 }
@@ -49,19 +49,19 @@ func (s *Session) flush(ctx context.Context, db DB) (post func(), err error) {
 		inserts:   map[any]*insertNode{},
 		tableRefs: map[string][]string{},
 	}
-	// Проход 1: множество новых сущностей (нужно для распознавания рёбер).
+	// Pass 1: the set of new entities (needed for edge detection).
 	for _, st := range s.stores {
 		st.collectAdded(p.addedSet)
 	}
-	// Проход 2: statements и валидация (до похода в БД).
-	// Порядок обхода stores — по имени типа: детерминизм плана.
+	// Pass 2: statements and validation (before hitting the DB).
+	// Stores are traversed by type name: deterministic plan.
 	for _, st := range storesSorted(s) {
 		if err := st.buildPlan(p); err != nil {
 			return nil, err
 		}
 	}
 
-	// 1. DELETE (дети раньше родителей) + UPDATE — один батч.
+	// 1. DELETE (children before parents) + UPDATE — one batch.
 	first := append(orderDeletes(p.deletes, p.tableRefs), p.updates...)
 	if len(first) > 0 {
 		items := make([]BatchItem, len(first))
@@ -73,7 +73,7 @@ func (s *Session) flush(ctx context.Context, db DB) (post func(), err error) {
 		}
 	}
 
-	// 2. INSERT по уровням: уровень готов, когда все его Added-родители вставлены.
+	// 2. INSERT by level: a level is ready once all of its Added parents are inserted.
 	remaining := p.inserts
 	for len(remaining) > 0 {
 		var level []*insertNode
@@ -94,7 +94,7 @@ func (s *Session) flush(ctx context.Context, db DB) (post func(), err error) {
 		}
 		sort.Slice(level, func(i, j int) bool { return level[i].seq < level[j].seq })
 
-		// values-время: родители предыдущих уровней уже имеют PK (fixup внутри).
+		// values time: parents from previous levels already have PKs (fixup inside).
 		items := groupInserts(p.d, level)
 		if err := db.ExecBatch(ctx, items); err != nil {
 			return nil, err
@@ -115,15 +115,15 @@ func (s *Session) flush(ctx context.Context, db DB) (post func(), err error) {
 	}, nil
 }
 
-// maxInsertRows / maxInsertArgs — пределы multi-row INSERT: строк на
-// статимент и плейсхолдеров (PG ограничен 65535 параметрами).
+// maxInsertRows / maxInsertArgs — multi-row INSERT limits: rows per
+// statement and placeholders (PG is capped at 65535 parameters).
 const (
 	maxInsertRows = 500
 	maxInsertArgs = 30000
 )
 
-// groupInserts склеивает вставки одного уровня в multi-row INSERT'ы:
-// подряд идущие узлы одной таблицы → INSERT ... VALUES (...),(...),...
+// groupInserts merges same-level inserts into multi-row INSERTs:
+// consecutive nodes of the same table → INSERT ... VALUES (...),(...),...
 func groupInserts(d dialect.Dialect, level []*insertNode) []BatchItem {
 	var items []BatchItem
 	for start := 0; start < len(level); {
@@ -218,9 +218,9 @@ func storesSorted(s *Session) []anyStore {
 	return out
 }
 
-// orderDeletes сортирует DELETE-стейтменты так, чтобы таблицы-дети шли
-// раньше таблиц, на которые они ссылаются. Self-reference игнорируется
-// (лучшее, что можно сделать без deferred constraints).
+// orderDeletes sorts DELETE statements so that child tables come
+// before the tables they reference. Self-references are ignored
+// (the best we can do without deferred constraints).
 func orderDeletes(stmts []planStmt, refs map[string][]string) []planStmt {
 	if len(stmts) == 0 {
 		return stmts
@@ -232,7 +232,7 @@ func orderDeletes(stmts []planStmt, refs map[string][]string) []planStmt {
 			return r
 		}
 		if seen[table] {
-			return 0 // цикл таблиц — не упорядочиваем
+			return 0 // table cycle — leave unordered
 		}
 		seen[table] = true
 		max := 0
@@ -250,20 +250,20 @@ func orderDeletes(stmts []planStmt, refs map[string][]string) []planStmt {
 	for _, st := range stmts {
 		depth(st.table, map[string]bool{})
 	}
-	// Большая глубина = дальше от корня = ребёнок → удаляется раньше.
+	// Greater depth = further from the root = child → deleted first.
 	sort.SliceStable(stmts, func(i, j int) bool {
 		return rank[stmts[i].table] > rank[stmts[j].table]
 	})
 	return stmts
 }
 
-// --- buildPlan для конкретного типа ---
+// --- buildPlan for a specific type ---
 
 func (t *tracker[E]) buildPlan(p *flushPlan) error {
 	m := t.meta
 	p.tableRefs[m.Table] = m.RefTables
 
-	// DELETE: отслеживаемые или с заполненным PK; added+removed взаимно гасятся.
+	// DELETE: tracked or with a populated PK; added+removed cancel each other out.
 	for _, e := range t.removedOrder {
 		if _, wasAdded := t.added[e]; wasAdded {
 			continue
@@ -275,7 +275,7 @@ func (t *tracker[E]) buildPlan(p *flushPlan) error {
 		t.planDelete(p, e, pk)
 	}
 
-	// UPDATE: дифф отслеживаемых.
+	// UPDATE: diff of tracked entities.
 	for _, r := range t.trackOrder {
 		if _, gone := t.removed[r.e]; gone {
 			continue
@@ -287,7 +287,7 @@ func (t *tracker[E]) buildPlan(p *flushPlan) error {
 		t.planUpdate(p, r, idxs)
 	}
 
-	// INSERT: added (кроме взаимно погашенных).
+	// INSERT: added (except mutually cancelled ones).
 	for _, e := range t.addedOrder {
 		if _, cancelled := t.removed[e]; cancelled {
 			continue
@@ -358,13 +358,13 @@ func (t *tracker[E]) planUpdate(p *flushPlan, r *rec[E], idxs []int) {
 func (t *tracker[E]) planInsert(p *flushPlan, e *E) error {
 	m := t.meta
 
-	// Валидация FK/навигаций — до похода в БД.
+	// FK/navigation validation — before hitting the DB.
 	var deps []any
 	for _, ref := range m.Refs {
 		nav := ref.Nav(e)
 		switch {
 		case nav != nil && p.addedSet[nav]:
-			deps = append(deps, nav) // родитель тоже новый → ребро топосорта
+			deps = append(deps, nav) // parent is new too → toposort edge
 		case nav != nil:
 			if isZero(ref.NavPK(e)) {
 				return fmt.Errorf("sorm: insert %s: navigation for %q points to an entity without a primary key (did you forget to Add it?)",
@@ -390,7 +390,7 @@ func (t *tracker[E]) planInsert(p *flushPlan, e *E) error {
 		pkCol:      m.PK,
 		insertCols: m.InsertCols,
 		values: func() []any {
-			// values-время: родители вставлены → FK-fixup по навигациям.
+			// values time: parents are inserted → FK fixup via navigations.
 			for _, ref := range refs {
 				if nav := ref.Nav(e); nav != nil {
 					ref.SetFK(e, ref.NavPK(e))

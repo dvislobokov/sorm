@@ -8,7 +8,7 @@ import (
 	models "github.com/dvislobokov/sorm/internal/testmodels"
 )
 
-// Tag — типизированные дескрипторы колонок models.Tag.
+// Tag holds typed column descriptors for models.Tag.
 var Tag = struct {
 	ID    sorm.OrdCol[models.Tag, int64]
 	Label sorm.StrCol[models.Tag]

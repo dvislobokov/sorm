@@ -9,7 +9,7 @@ services:
       interval: 2s
       timeout: 2s
       retries: 20
-    # Раскомментируйте, чтобы ходить в БД с хоста:
+    # Uncomment to access the DB from the host:
     # ports: ["5432:5432"]
 
   app:
@@ -19,7 +19,7 @@ services:
     environment:
       DATABASE_URL: postgres://postgres:postgres@db:5432/todo
     ports:
-      - "${APP_PORT:-8080}:8080" # хост-порт: APP_PORT=18080 docker compose up
+      - "${APP_PORT:-8080}:8080" # host port: APP_PORT=18080 docker compose up
     depends_on:
       db:
         condition: service_healthy

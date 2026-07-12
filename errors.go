@@ -5,15 +5,15 @@ import (
 	"fmt"
 )
 
-// ErrNotFound — единственная семантика «не найдено» во всём API (One, будущий Find по PK).
+// ErrNotFound — the single "not found" semantics across the entire API (One, future Find by PK).
 var ErrNotFound = errors.New("sorm: not found")
 
-// ErrCyclicGraph — цикл между новыми сущностями при SaveChanges (например,
-// взаимные ссылки двух Added-объектов). В MVP не поддерживается.
+// ErrCyclicGraph — a cycle between new entities during SaveChanges (e.g.
+// mutual references between two Added objects). Not supported in the MVP.
 var ErrCyclicGraph = errors.New("sorm: cyclic dependency between new entities")
 
-// ConflictError — optimistic concurrency: UPDATE/DELETE затронул 0 строк,
-// значит строка изменена или удалена конкурентно после загрузки.
+// ConflictError — optimistic concurrency: an UPDATE/DELETE affected 0 rows,
+// meaning the row was changed or deleted concurrently after loading.
 type ConflictError struct {
 	Table string
 	PK    any
@@ -23,7 +23,7 @@ func (e *ConflictError) Error() string {
 	return fmt.Sprintf("sorm: concurrency conflict on %s pk=%v (row changed or deleted since load)", e.Table, e.PK)
 }
 
-// ConstraintKind — вид нарушенного ограничения БД.
+// ConstraintKind — the kind of violated DB constraint.
 type ConstraintKind int
 
 const (
@@ -48,15 +48,15 @@ func (k ConstraintKind) String() string {
 	}
 }
 
-// ConstraintError — нарушение ограничения БД, транслированное драйверным
-// адаптером в типизированную ошибку: хендлер отличает «email занят» (409)
-// от аварии (500) без разбора кодов драйвера.
+// ConstraintError — a DB constraint violation translated by the driver
+// adapter into a typed error: a handler can tell "email taken" (409)
+// from a failure (500) without parsing driver codes.
 //
 //	var ce *sorm.ConstraintError
 //	if errors.As(err, &ce) && ce.Kind == sorm.ConstraintUnique { ... }
 type ConstraintError struct {
 	Kind       ConstraintKind
-	Constraint string // имя констрейнта/колонки, если драйвер его сообщил
+	Constraint string // constraint/column name, if the driver reported it
 	Err        error
 }
 
@@ -69,16 +69,16 @@ func (e *ConstraintError) Error() string {
 
 func (e *ConstraintError) Unwrap() error { return e.Err }
 
-// IsUniqueViolation — краткая проверка на нарушение уникальности.
+// IsUniqueViolation — a shorthand check for a uniqueness violation.
 func IsUniqueViolation(err error) bool {
 	var ce *ConstraintError
 	return errors.As(err, &ce) && ce.Kind == ConstraintUnique
 }
 
-// ScanError — несоответствие колонок результата и полей назначения (Raw/RawAs/Project).
+// ScanError — a mismatch between result columns and destination fields (Raw/RawAs/Project).
 type ScanError struct {
-	Missing []string // колонки результата, для которых нет назначения
-	Extra   []string // ожидались, но отсутствуют в результате
+	Missing []string // result columns that have no destination
+	Extra   []string // expected but absent from the result
 }
 
 func (e *ScanError) Error() string {

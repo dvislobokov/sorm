@@ -10,7 +10,7 @@ import (
 	models "github.com/dvislobokov/sorm/examples/blog/models"
 )
 
-// Article — типизированные дескрипторы колонок models.Article.
+// Article holds typed column descriptors for models.Article.
 var Article = struct {
 	ID          sorm.OrdCol[models.Article, int64]
 	AuthorID    sorm.OrdCol[models.Article, int64]

@@ -18,7 +18,7 @@ func runM2M(t *testing.T, db sorm.DB) {
 	ctx := context.Background()
 	u := gen.User
 
-	// Сущности обеих сторон.
+	// Entities on both sides.
 	s := sorm.NewSession(db)
 	alice := &models.User{Email: "a@b.c", Name: "Alice", Active: true, CreatedAt: nowNoZero()}
 	bob := &models.User{Email: "b@b.c", Name: "Bob", Active: true, CreatedAt: nowNoZero()}
@@ -31,7 +31,7 @@ func runM2M(t *testing.T, db sorm.DB) {
 		t.Fatal(err)
 	}
 
-	// Link: явное связывание.
+	// Link: explicit association.
 	if err := u.Tags.Link(ctx, db, alice, goTag, dbTag); err != nil {
 		t.Fatal(err)
 	}
@@ -39,12 +39,12 @@ func runM2M(t *testing.T, db sorm.DB) {
 		t.Fatal(err)
 	}
 
-	// Повторный Link — типизированный конфликт (композитный PK join-таблицы).
+	// A repeated Link is a typed conflict (composite PK of the join table).
 	if err := u.Tags.Link(ctx, db, alice, goTag); !sorm.IsUniqueViolation(err) {
-		t.Fatalf("повторный Link: ожидали unique violation, получили %v", err)
+		t.Fatalf("repeated Link: expected unique violation, got %v", err)
 	}
 
-	// Include: раскладка по родителям, пустая связь — пустой слайс.
+	// Include: fan-out by parent; an empty relation is an empty slice.
 	users, err := sorm.Query[models.User](db).
 		With(u.Tags.Include()).
 		OrderBy(u.Name.Asc()).
@@ -60,7 +60,7 @@ func runM2M(t *testing.T, db sorm.DB) {
 		t.Fatalf("alice tags: %v", labels)
 	}
 
-	// Include с фильтром детей.
+	// Include with a child filter.
 	filtered, err := sorm.Query[models.User](db).
 		With(u.Tags.Include(gen.Tag.Label.Eq("go"))).
 		OrderBy(u.Name.Asc()).
@@ -69,10 +69,10 @@ func runM2M(t *testing.T, db sorm.DB) {
 		t.Fatalf("filtered include: %v (err=%v)", filtered, err)
 	}
 	if filtered[1].Tags == nil {
-		t.Fatal("загруженная пустая m2m-связь должна быть пустым слайсом")
+		t.Fatal("a loaded empty m2m relation must be an empty slice")
 	}
 
-	// Any: пользователи с тегом go.
+	// Any: users with the go tag.
 	withGo, err := sorm.Query[models.User](db).Where(u.Tags.Any(gen.Tag.Label.Eq("go"))).All(ctx)
 	if err != nil || len(withGo) != 1 || withGo[0].Name != "Alice" {
 		t.Fatalf("any: %v (err=%v)", withGo, err)
@@ -87,7 +87,7 @@ func runM2M(t *testing.T, db sorm.DB) {
 		With(u.Tags.Include()).
 		One(ctx)
 	if err != nil || len(after.Tags) != 1 || after.Tags[0].Label != "go" {
-		t.Fatalf("после unlink: %v (err=%v)", after.Tags, err)
+		t.Fatalf("after unlink: %v (err=%v)", after.Tags, err)
 	}
 }
 
@@ -97,6 +97,6 @@ func TestManyToManyAnySQL(t *testing.T) {
 	want := `EXISTS (SELECT 1 FROM "user_tags" WHERE "user_id" = "users"."id"` +
 		` AND "tag_id" IN (SELECT "id" FROM "tags" WHERE "label" = $1))`
 	if !strings.Contains(sql, want) {
-		t.Fatalf("sql:\n%s\nнет фрагмента:\n%s", sql, want)
+		t.Fatalf("sql:\n%s\nmissing fragment:\n%s", sql, want)
 	}
 }

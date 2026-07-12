@@ -8,9 +8,9 @@ import (
 	"sync"
 )
 
-// Raw — escape в сырой SQL со сканированием в сущности через мету.
-// Соответствие проверяется строго по именам колонок: любое расхождение —
-// *ScanError со списками, а не тихо пропущенные поля.
+// Raw is the escape hatch into raw SQL with scanning into entities via meta.
+// Matching is strict by column name: any mismatch yields a *ScanError with
+// the lists, not silently skipped fields.
 func Raw[E any](db DB, sql string, args ...any) RawQuery[E] {
 	m := metaFor[E]()
 	byName := make(map[string]int, len(m.SelectCols))
@@ -26,10 +26,10 @@ func Raw[E any](db DB, sql string, args ...any) RawQuery[E] {
 	}
 }
 
-// RawAs — сырой SQL со сканированием в произвольную структуру R
-// (агрегаты, CTE, window functions — всё, что не форма сущности).
-// Маппинг: тег `sorm:"col"` или snake_case имени поля. План сканирования
-// строится один раз на тип и кэшируется.
+// RawAs is raw SQL with scanning into an arbitrary struct R
+// (aggregates, CTEs, window functions — anything that is not the shape of an entity).
+// Mapping: the `sorm:"col"` tag or snake_case of the field name. The scan plan
+// is built once per type and cached.
 func RawAs[R any](db DB, sql string, args ...any) RawQuery[R] {
 	plan, err := structPlanFor(reflect.TypeFor[R]())
 	if err != nil {
@@ -56,7 +56,7 @@ type RawQuery[T any] struct {
 	sql  string
 	args []any
 	err  error
-	// dests: колонки результата → индексы целей; targets: цели в порядке плана.
+	// dests: result columns -> target indexes; targets: targets in plan order.
 	dests   func(resultCols []string) ([]int, *ScanError)
 	targets func(*T) []any
 }
@@ -103,8 +103,8 @@ func (q RawQuery[T]) One(ctx context.Context) (*T, error) {
 	return all[0], nil
 }
 
-// matchColumns — строгое соответствие: каждая колонка результата обязана
-// иметь цель, каждая цель — колонку.
+// matchColumns enforces strict matching: every result column must have a
+// target, and every target a column.
 func matchColumns(resultCols []string, byName map[string]int, known []string) ([]int, *ScanError) {
 	idxs := make([]int, 0, len(resultCols))
 	used := make(map[string]bool, len(resultCols))
@@ -130,12 +130,12 @@ func matchColumns(resultCols []string, byName map[string]int, known []string) ([
 	return idxs, nil
 }
 
-// --- план сканирования произвольной структуры (RawAs/Project) ---
+// --- scan plan for an arbitrary struct (RawAs/Project) ---
 
 type structPlan struct {
-	names  []string       // имена колонок в порядке полей
-	byName map[string]int // имя → порядковый номер поля в fields
-	fields []int          // индексы полей структуры
+	names  []string       // column names in field order
+	byName map[string]int // name -> ordinal of the field in fields
+	fields []int          // struct field indexes
 }
 
 var structPlans sync.Map // reflect.Type -> *structPlan

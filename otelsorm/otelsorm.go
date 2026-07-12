@@ -1,11 +1,12 @@
-// Package otelsorm — OpenTelemetry-трейсинг для sorm поверх sorm.Instrument:
+// Package otelsorm provides OpenTelemetry tracing for sorm on top of
+// sorm.Instrument:
 //
 //	db = otelsorm.Wrap(db)
 //
-// Каждая операция БД (query/exec/batch/begin/commit/rollback) становится
-// спаном с атрибутами db.system, db.statement и db.operation.batch.size;
-// ошибки записываются в статус спана. Ядро sorm от OpenTelemetry не
-// зависит — зависимость линкуется только при импорте этого пакета.
+// Every DB operation (query/exec/batch/begin/commit/rollback) becomes a
+// span with db.system, db.statement, and db.operation.batch.size attributes;
+// errors are recorded in the span status. The sorm core does not depend on
+// OpenTelemetry — the dependency is linked only when this package is imported.
 package otelsorm
 
 import (
@@ -26,21 +27,21 @@ type config struct {
 	spanNamePrefix string
 }
 
-// Option — настройка обёртки.
+// Option configures the wrapper.
 type Option func(*config)
 
-// WithTracerProvider задаёт провайдер (по умолчанию — глобальный otel).
+// WithTracerProvider sets the provider (defaults to the global otel one).
 func WithTracerProvider(tp trace.TracerProvider) Option {
 	return func(c *config) { c.tracer = tp.Tracer("github.com/dvislobokov/sorm") }
 }
 
-// WithArgs включает запись аргументов запроса в атрибуты спана.
-// По умолчанию выключено: аргументы часто содержат чувствительные данные.
+// WithArgs enables recording query arguments in span attributes.
+// Disabled by default: arguments often contain sensitive data.
 func WithArgs() Option {
 	return func(c *config) { c.includeArgs = true }
 }
 
-// Wrap оборачивает sorm.DB трейсингом.
+// Wrap wraps a sorm.DB with tracing.
 func Wrap(db sorm.DB, opts ...Option) sorm.DB {
 	cfg := &config{tracer: otel.Tracer("github.com/dvislobokov/sorm")}
 	for _, o := range opts {

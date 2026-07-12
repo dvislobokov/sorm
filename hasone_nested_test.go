@@ -27,7 +27,7 @@ func TestHasOneSQLite(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Include: у Alice профиль есть, у Bob — nil.
+	// Include: Alice has a profile, Bob's is nil.
 	users, err := sorm.Query[models.User](db).
 		With(u.Profile.Include()).
 		OrderBy(u.Name.Asc()).
@@ -39,7 +39,7 @@ func TestHasOneSQLite(t *testing.T) {
 		t.Fatalf("alice profile: %+v", users[0].Profile)
 	}
 	if users[1].Profile != nil {
-		t.Fatalf("bob profile должен быть nil: %+v", users[1].Profile)
+		t.Fatalf("bob profile must be nil: %+v", users[1].Profile)
 	}
 
 	// Any / None.
@@ -53,7 +53,7 @@ func TestHasOneSQLite(t *testing.T) {
 	}
 }
 
-// Вложенный Include: посты → авторы → профили авторов, в один With.
+// Nested Include: posts → authors → author profiles, in a single With.
 func TestNestedInclude(t *testing.T) {
 	db := sqliteDB(t)
 	ctx := context.Background()
@@ -75,11 +75,11 @@ func TestNestedInclude(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// users → Posts (с сортировкой детей) ; posts → Author → Profile.
+	// users → Posts (with child ordering) ; posts → Author → Profile.
 	users, err := sorm.Query[models.User](db).
 		With(u.Posts.Include(
-			p.Title.Asc(),                            // Order[C] как опция
-			p.Author.Include(u.Profile.Include()),    // ThenInclude двух уровней
+			p.Title.Asc(),                            // Order[C] as an option
+			p.Author.Include(u.Profile.Include()),    // two-level ThenInclude
 		)).
 		All(ctx)
 	if err != nil {
@@ -89,15 +89,15 @@ func TestNestedInclude(t *testing.T) {
 		t.Fatalf("users/posts: %+v", users)
 	}
 	if users[0].Posts[0].Title != "a-first" {
-		t.Fatalf("Order[C]-опция не сработала: %q", users[0].Posts[0].Title)
+		t.Fatalf("Order[C] option did not apply: %q", users[0].Posts[0].Title)
 	}
 	author := users[0].Posts[0].Author
 	if author == nil || author.Profile == nil || author.Profile.Bio != "nested" {
-		t.Fatalf("вложенный Include: author=%+v", author)
+		t.Fatalf("nested Include: author=%+v", author)
 	}
-	// identity map не задействован (без Track), но раскладка по PK даёт
-	// один объект автора на оба поста.
+	// The identity map is not involved (no Track), but fan-out by PK yields
+	// a single author object for both posts.
 	if users[0].Posts[0].Author != users[0].Posts[1].Author {
-		t.Fatal("оба поста должны ссылаться на один объект автора")
+		t.Fatal("both posts must reference the same author object")
 	}
 }

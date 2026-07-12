@@ -8,7 +8,7 @@ import (
 	models "sorm-benchmarks/models"
 )
 
-// BenchUser — типизированные дескрипторы колонок models.BenchUser.
+// BenchUser holds typed column descriptors for models.BenchUser.
 var BenchUser = struct {
 	ID     sorm.OrdCol[models.BenchUser, int64]
 	Name   sorm.StrCol[models.BenchUser]

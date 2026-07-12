@@ -9,9 +9,9 @@ import (
 	"github.com/dvislobokov/sorm/internal/parse"
 )
 
-// Golden-тест: генерация из internal/testmodels должна бит-в-бит совпадать
-// с закоммиченным internal/testmodels/sormgen. При осознанном изменении
-// генератора: `go run ./cmd/sorm gen ./internal/testmodels` и закоммитить.
+// Golden test: generation from internal/testmodels must match the committed
+// internal/testmodels/sormgen byte for byte. On an intentional generator
+// change: `go run ./cmd/sorm gen ./internal/testmodels` and commit.
 func TestGoldenTestmodels(t *testing.T) {
 	modelsDir := filepath.Join("..", "testmodels")
 

@@ -9,13 +9,13 @@ import (
 	"github.com/dvislobokov/sorm/dialect"
 )
 
-// Update — set-based UPDATE без сессии (аналог ExecuteUpdate в EF Core).
-// Типобезопасность — на дескрипторах: Set принимает Assign[E] от Col.Set(v).
-// Set(false) и Set(0) — полноценные присваивания.
+// Update is a set-based UPDATE without a session (analogous to ExecuteUpdate in EF Core).
+// Type safety comes from descriptors: Set takes an Assign[E] from Col.Set(v).
+// Set(false) and Set(0) are full-fledged assignments.
 //
-// UPDATE без Where — ошибка, если явно не разрешён AllRows() (анти-footgun).
-// У версионируемых сущностей автоматически инкрементируется version —
-// открытые сессии честно поймают конфликт.
+// UPDATE without Where is an error unless explicitly allowed via AllRows() (anti-footgun).
+// For versioned entities the version column is incremented automatically —
+// open sessions will properly catch the conflict.
 func Update[E any](db DB) UpdateBuilder[E] {
 	return UpdateBuilder[E]{db: db, meta: metaFor[E](), d: dialectOf(db)}
 }
@@ -39,7 +39,7 @@ func (q UpdateBuilder[E]) Where(ps ...Pred[E]) UpdateBuilder[E] {
 	return q
 }
 
-// AllRows — явное разрешение выполнить UPDATE по всей таблице.
+// AllRows explicitly allows an UPDATE over the whole table.
 func (q UpdateBuilder[E]) AllRows() UpdateBuilder[E] {
 	q.allRows = true
 	return q
@@ -90,7 +90,7 @@ func (q UpdateBuilder[E]) Exec(ctx context.Context) (int64, error) {
 	return n, nil
 }
 
-// Delete — set-based DELETE. Те же правила: без Where нужен AllRows().
+// Delete is a set-based DELETE. Same rules: without Where, AllRows() is required.
 func Delete[E any](db DB) DeleteBuilder[E] {
 	return DeleteBuilder[E]{db: db, meta: metaFor[E](), d: dialectOf(db)}
 }

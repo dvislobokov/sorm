@@ -6,22 +6,22 @@ import (
 	"github.com/dvislobokov/sorm/dialect"
 )
 
-// Op — описание операции для инструментирования.
+// Op — an operation description for instrumentation.
 type Op struct {
 	Kind string // "query" | "exec" | "batch" | "begin" | "commit" | "rollback"
-	SQL  string // текст запроса ("" для begin/commit/rollback; первый статимент для batch)
+	SQL  string // query text ("" for begin/commit/rollback; first statement for batch)
 	Args []any
-	// Statements — все статименты батча (Kind == "batch").
+	// Statements — all statements of the batch (Kind == "batch").
 	Statements []string
 }
 
-// InstrumentFunc оборачивает каждую операцию БД: логирование, метрики,
-// трейсинг (OpenTelemetry-спан вокруг next). Обязана вызвать next ровно
-// один раз и вернуть его ошибку (можно обёрнутую).
+// InstrumentFunc wraps every DB operation: logging, metrics,
+// tracing (an OpenTelemetry span around next). It must call next exactly
+// once and return its error (possibly wrapped).
 type InstrumentFunc func(ctx context.Context, op Op, next func(ctx context.Context) error) error
 
-// Instrument оборачивает DB middleware-функцией. Работает с любым
-// адаптером; транзакции инструментируются тем же fn.
+// Instrument wraps a DB with a middleware function. Works with any
+// adapter; transactions are instrumented with the same fn.
 //
 //	db = sorm.Instrument(db, func(ctx context.Context, op sorm.Op, next func(context.Context) error) error {
 //	    start := time.Now()
@@ -40,7 +40,7 @@ type instrumented struct {
 
 func (d instrumented) Dialect() dialect.Dialect { return d.inner.Dialect() }
 
-// RetryableError делегируется адаптеру (для RunInTx).
+// RetryableError delegates to the adapter (for RunInTx).
 func (d instrumented) RetryableError(err error) bool {
 	if rc, ok := d.inner.(retryClassifier); ok {
 		return rc.RetryableError(err)

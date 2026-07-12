@@ -1,6 +1,6 @@
-// Package testmodels — тестовая схема, покрывающая все виды полей,
-// которые умеет генератор: базовые типы, nullable-указатели, time.Time,
-// []byte, версию и навигации.
+// Package testmodels is a test schema covering every field kind the
+// generator supports: basic types, nullable pointers, time.Time,
+// []byte, a version field, and navigations.
 package testmodels
 
 //go:generate go run github.com/dvislobokov/sorm/cmd/sorm gen .
@@ -28,21 +28,21 @@ type User struct {
 	Profile   *Profile `sorm:"hasOne:UserID"`
 }
 
-// Profile — hasOne-сторона: FK у ребёнка, навигация-указатель у родителя.
+// Profile is the hasOne side: the FK lives on the child, the parent holds a pointer navigation.
 type Profile struct {
 	ID     int64  `sorm:"pk,auto"`
 	UserID int64  `sorm:"fk:User.ID,uniqueIndex:uq_profiles_user"`
 	Bio    string
 }
 
-// Tag — сторона many2many (join-таблица user_tags генерируется неявно).
+// Tag is a many2many side (the user_tags join table is generated implicitly).
 type Tag struct {
 	ID    int64  `sorm:"pk,auto"`
 	Label string `sorm:"unique"`
 }
 
-// Indexes — кастомные индексы, невыразимые тегами (DESC-сортировка;
-// так же задаются выражения, WHERE и типы вроде gin/fulltext).
+// Indexes defines custom indexes inexpressible via tags (DESC ordering;
+// expressions, WHERE, and types like gin/fulltext are set the same way).
 func (User) Indexes() []sorm.IndexDef {
 	return []sorm.IndexDef{
 		{Name: "idx_users_created_desc", Parts: []sorm.IndexPart{
@@ -52,8 +52,8 @@ func (User) Indexes() []sorm.IndexDef {
 	}
 }
 
-// ApiKey — сущность со строковым (UUID) PK, назначаемым клиентом:
-// путь без auto/RETURNING.
+// ApiKey is an entity with a client-assigned string (UUID) PK:
+// the path without auto/RETURNING.
 type ApiKey struct {
 	ID     string `sorm:"pk,type:varchar(36)"`
 	UserID int64  `sorm:"fk:User.ID"`
@@ -65,7 +65,7 @@ type Post struct {
 	ID       int64  `sorm:"pk,auto"`
 	AuthorID int64  `sorm:"fk:User.ID,index:idx_posts_author_title"`
 	Author   *User  `sorm:"belongsTo:AuthorID"`
-	Title    string `sorm:"index:idx_posts_author_title"` // композитный (author_id, title)
+	Title    string `sorm:"index:idx_posts_author_title"` // composite (author_id, title)
 	Body     string
-	Views    int    `sorm:"index"` // одноколоночный idx_posts_views
+	Views    int    `sorm:"index"` // single-column idx_posts_views
 }

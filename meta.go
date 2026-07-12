@@ -6,67 +6,67 @@ import (
 	"sync"
 )
 
-// Meta описывает сущность для рантайма. В боевом коде генерируется `sorm gen`;
-// рукописная мета допустима в тестах и на переходный период.
-// Все функции пополевые, без рефлексии — единственная рефлексия рантайма
-// это один lookup типа в реестре при построении запроса.
+// Meta describes an entity to the runtime. In production code it is generated
+// by `sorm gen`; handwritten meta is fine for tests and transition periods.
+// All functions are per-field, no reflection — the only runtime reflection
+// is a single type lookup in the registry when building a query.
 type Meta[E any] struct {
 	Table      string
-	PK         string // имя PK-колонки
-	Auto       bool   // PK генерируется БД (identity) → INSERT ... RETURNING
-	VersionCol string // "" — без optimistic concurrency
+	PK         string // PK column name
+	Auto       bool   // PK is DB-generated (identity) → INSERT ... RETURNING
+	VersionCol string // "" — no optimistic concurrency
 
-	SelectCols []string // порядок соответствует Scan
-	InsertCols []string // без auto-PK; порядок соответствует InsertValues
+	SelectCols []string // order matches Scan
+	InsertCols []string // without auto-PK; order matches InsertValues
 
-	// Scan возвращает указатели на поля в порядке SelectCols.
+	// Scan returns pointers to fields in SelectCols order.
 	Scan func(*E) []any
-	// InsertValues возвращает значения в порядке InsertCols.
+	// InsertValues returns values in InsertCols order.
 	InsertValues func(*E) []any
-	// ValuesFor возвращает значения колонок по индексам из SelectCols (мост дифф → UPDATE).
+	// ValuesFor returns column values by SelectCols indexes (bridge diff → UPDATE).
 	ValuesFor func(*E, []int) []any
-	// Snapshot/Diff — снапшот-трекинг (PR №4). Снапшот — типизированная
-	// генерируемая структура, боксится на границе меты.
+	// Snapshot/Diff — snapshot tracking (PR #4). The snapshot is a typed
+	// generated struct, boxed at the meta boundary.
 	Snapshot func(*E) any
 	Diff     func(any, *E) []int
-	// SetPK проставляет auto-PK после RETURNING.
+	// SetPK sets the auto-PK after RETURNING.
 	SetPK func(*E, int64)
-	// PKValue — значение PK (ключ identity map).
+	// PKValue — the PK value (identity map key).
 	PKValue func(*E) any
-	// GetVersion/SetVersion — только при VersionCol != "".
+	// GetVersion/SetVersion — only when VersionCol != "".
 	GetVersion func(*E) int64
 	SetVersion func(*E, int64)
-	// Refs — belongsTo-навигации этой сущности: рёбра для топосорта по
-	// экземплярам и FK-fixup новых графов.
+	// Refs — belongsTo navigations of this entity: edges for per-instance
+	// toposort and FK fixup of new graphs.
 	Refs []Ref[E]
-	// RefTables — таблицы, на которые ссылаются FK (порядок удаления).
+	// RefTables — tables referenced by FKs (deletion order).
 	RefTables []string
 }
 
-// Ref — навигационная ссылка «многие → один», сгенерированная для FK-колонки.
+// Ref — a many-to-one navigation reference generated for an FK column.
 type Ref[E any] struct {
 	FKCol   string
 	NotNull bool
-	// Nav — указатель на родителя как any (nil-safe: typed-nil не протекает).
+	// Nav — pointer to the parent as any (nil-safe: no typed-nil leaks).
 	Nav func(*E) any
-	// NavPK — PK родителя; валиден только при Nav != nil.
+	// NavPK — the parent's PK; valid only when Nav != nil.
 	NavPK func(*E) any
-	// SetFK проставляет FK из PK родителя (fixup после вставки родителя).
+	// SetFK sets the FK from the parent's PK (fixup after the parent is inserted).
 	SetFK func(*E, any)
-	// FKIsZero — FK-колонка не заполнена вручную.
+	// FKIsZero — the FK column was not set manually.
 	FKIsZero func(*E) bool
 }
 
-var registry sync.Map // reflect.Type -> *Meta[E] (как any)
+var registry sync.Map // reflect.Type -> *Meta[E] (as any)
 
-// Register регистрирует мету сущности. Вызывается из init() сгенерированного пакета.
+// Register registers an entity's meta. Called from the generated package's init().
 func Register[E any](m Meta[E]) {
 	registry.Store(reflect.TypeFor[E](), &m)
 }
 
-// MetaOf возвращает зарегистрированную мету сущности — для тестов и
-// продвинутых сценариев (инструментирование, собственные executors).
-// Паникует, если мета не зарегистрирована.
+// MetaOf returns the registered meta of an entity — for tests and
+// advanced scenarios (instrumentation, custom executors).
+// Panics if no meta is registered.
 func MetaOf[E any]() *Meta[E] { return metaFor[E]() }
 
 func metaFor[E any]() *Meta[E] {

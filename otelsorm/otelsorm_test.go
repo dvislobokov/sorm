@@ -58,13 +58,13 @@ func TestSpans(t *testing.T) {
 			}
 		}
 	}
-	// SaveChanges: begin + batch + commit; затем query.
+	// SaveChanges: begin + batch + commit; then query.
 	for _, want := range []string{"sorm.begin", "sorm.batch", "sorm.commit", "sorm.query"} {
 		if byName[want] == 0 {
-			t.Errorf("нет спана %s (есть: %v)", want, byName)
+			t.Errorf("missing span %s (got: %v)", want, byName)
 		}
 	}
 	if !stmtSeen {
-		t.Error("ни один спан не несёт db.statement")
+		t.Error("no span carries db.statement")
 	}
 }

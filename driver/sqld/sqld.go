@@ -1,6 +1,6 @@
-// Package sqld — адаптер database/sql (MySQL, SQLite). Батчи исполняются
-// последовательно в текущем соединении/транзакции; auto-PK — через
-// RETURNING (если диалект умеет) или LastInsertId.
+// Package sqld is the database/sql adapter (MySQL, SQLite). Batches execute
+// sequentially on the current connection/transaction; auto-PKs come via
+// RETURNING (if the dialect supports it) or LastInsertId.
 package sqld
 
 import (
@@ -14,8 +14,8 @@ import (
 	"github.com/dvislobokov/sorm/dialect"
 )
 
-// Wrap оборачивает *sql.DB в sorm.DB с указанным диалектом
-// (dialect/my для MySQL, dialect/lite для SQLite).
+// Wrap wraps a *sql.DB into a sorm.DB with the given dialect
+// (dialect/my for MySQL, dialect/lite for SQLite).
 func Wrap(sdb *sql.DB, d dialect.Dialect) sorm.DB {
 	return db{q: sdb, d: d, beginner: sdb}
 }
@@ -29,7 +29,7 @@ type queryer interface {
 type db struct {
 	q        queryer
 	d        dialect.Dialect
-	beginner *sql.DB // nil внутри транзакции
+	beginner *sql.DB // nil inside a transaction
 }
 
 func (d db) Dialect() dialect.Dialect { return d.d }
@@ -123,21 +123,21 @@ func (d db) queryIDs(ctx context.Context, it sorm.BatchItem) ([]int64, error) {
 		return nil, err
 	}
 	if len(ids) != it.IDCount {
-		return nil, fmt.Errorf("sqld: RETURNING вернул %d id, ожидали %d", len(ids), it.IDCount)
+		return nil, fmt.Errorf("sqld: RETURNING returned %d ids, expected %d", len(ids), it.IDCount)
 	}
 	return ids, nil
 }
 
-// idsFromLastInsert восстанавливает id строк multi-row INSERT'а из
-// LastInsertId: MySQL возвращает ПЕРВЫЙ id батча (id идут по возрастанию
-// при auto_increment_increment=1), SQLite — ПОСЛЕДНИЙ rowid.
+// idsFromLastInsert reconstructs the row ids of a multi-row INSERT from
+// LastInsertId: MySQL returns the FIRST id of the batch (ids ascend when
+// auto_increment_increment=1), SQLite returns the LAST rowid.
 func idsFromLastInsert(dialect string, res sql.Result, n int) ([]int64, error) {
 	last, err := res.LastInsertId()
 	if err != nil {
 		return nil, fmt.Errorf("sqld: LastInsertId: %w", err)
 	}
 	if affected, err := res.RowsAffected(); err == nil && affected != int64(n) {
-		return nil, fmt.Errorf("sqld: multi-insert затронул %d строк, ожидали %d", affected, n)
+		return nil, fmt.Errorf("sqld: multi-insert affected %d rows, expected %d", affected, n)
 	}
 	ids := make([]int64, n)
 	first := last
@@ -150,10 +150,10 @@ func idsFromLastInsert(dialect string, res sql.Result, n int) ([]int64, error) {
 	return ids, nil
 }
 
-// translate конвертирует ошибки констрейнтов MySQL/SQLite в типизированный
-// *sorm.ConstraintError. Без импорта драйверов — по кодам/тексту:
+// translate converts MySQL/SQLite constraint errors into a typed
+// *sorm.ConstraintError. No driver imports — matches by code/text:
 // MySQL: 1062 (duplicate), 1452/1451 (FK), 1048 (null), 3819 (check);
-// SQLite: "UNIQUE constraint failed" и т.п.
+// SQLite: "UNIQUE constraint failed" etc.
 func (d db) translate(err error) error {
 	if err == nil {
 		return err
@@ -193,9 +193,9 @@ func (d db) translate(err error) error {
 	return &sorm.ConstraintError{Kind: kind, Err: err}
 }
 
-// RetryableError — transient-ошибки, после которых транзакцию имеет смысл
-// повторить. Без импорта конкретных драйверов: MySQL 1213 (deadlock) и
-// 1205 (lock wait timeout) распознаются по тексту, SQLite — по
+// RetryableError reports transient errors after which the transaction is
+// worth retrying. No specific driver imports: MySQL 1213 (deadlock) and
+// 1205 (lock wait timeout) are recognized by text, SQLite by
 // "database is locked" (SQLITE_BUSY).
 func (d db) RetryableError(err error) bool {
 	if err == nil {

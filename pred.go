@@ -6,9 +6,9 @@ import (
 	"github.com/dvislobokov/sorm/dialect"
 )
 
-// Pred — иммутабельное условие, параметризованное сущностью: условие по одной
-// сущности невозможно подать в запрос по другой (ошибка компиляции).
-// agg=true — условие с агрегатом, допустимо только в Having.
+// Pred is an immutable condition parameterized by the entity: a condition on
+// one entity cannot be passed into a query on another (compile-time error).
+// agg=true means the condition contains an aggregate and is only valid in Having.
 type Pred[E any] struct {
 	n   node
 	agg bool
@@ -16,12 +16,12 @@ type Pred[E any] struct {
 
 func pred[E any](n node) Pred[E] { return Pred[E]{n: n} }
 
-// And объединяет условия конъюнкцией. And() без аргументов — TRUE.
+// And combines conditions with a conjunction. And() with no arguments is TRUE.
 func And[E any](ps ...Pred[E]) Pred[E] {
 	return Pred[E]{n: logicalNode{"AND", nodesOf(ps)}, agg: anyAgg(ps)}
 }
 
-// Or объединяет условия дизъюнкцией. Or() без аргументов — FALSE.
+// Or combines conditions with a disjunction. Or() with no arguments is FALSE.
 func Or[E any](ps ...Pred[E]) Pred[E] {
 	return Pred[E]{n: logicalNode{"OR", nodesOf(ps)}, agg: anyAgg(ps)}
 }
@@ -68,8 +68,8 @@ type inNode struct {
 }
 
 func (n inNode) writeSQL(w *sqlWriter) {
-	// Пустой IN — не ошибка рантайма, а предсказуемая константа:
-	// In() ни с чем не совпадает, NotIn() совпадает со всем.
+	// Empty IN is not a runtime error but a predictable constant:
+	// In() matches nothing, NotIn() matches everything.
 	if len(n.vals) == 0 {
 		if n.not {
 			w.raw("TRUE")
@@ -147,9 +147,9 @@ func (n logicalNode) writeSQL(w *sqlWriter) {
 	w.raw(")")
 }
 
-// existsNode — коррелированный подзапрос по связи: внутри него неквалифицированные
-// имена колонок разрешаются в дочернюю таблицу (внутренняя область видимости),
-// ссылка на родителя квалифицируется явно.
+// existsNode is a correlated subquery over a relation: inside it, unqualified
+// column names resolve to the child table (inner scope), while the reference
+// to the parent is qualified explicitly.
 type existsNode struct {
 	childTable  string
 	fkCol       string
@@ -186,7 +186,7 @@ func (n notNode) writeSQL(w *sqlWriter) {
 	w.raw(")")
 }
 
-// aggNode — агрегатное выражение: count(*), sum("t"."c") и т.п.
+// aggNode is an aggregate expression: count(*), sum("t"."c"), etc.
 type aggNode struct {
 	fn   string
 	ref  colRef
@@ -203,7 +203,7 @@ func (n aggNode) writeSQL(w *sqlWriter) {
 	w.raw(")")
 }
 
-// exprCmpNode — сравнение произвольного выражения (агрегата) со значением.
+// exprCmpNode compares an arbitrary expression (an aggregate) with a value.
 type exprCmpNode struct {
 	left node
 	op   string
@@ -216,13 +216,13 @@ func (n exprCmpNode) writeSQL(w *sqlWriter) {
 	w.arg(n.val)
 }
 
-// --- построение SQL ---
+// --- SQL generation ---
 
 type sqlWriter struct {
 	sb      strings.Builder
 	d       dialect.Dialect
 	args    []any
-	qualify bool // проекционный слой с JOIN: имена колонок с таблицей
+	qualify bool // projection layer with JOINs: column names prefixed with the table
 }
 
 func newSQLWriter(d dialect.Dialect) *sqlWriter { return &sqlWriter{d: d} }

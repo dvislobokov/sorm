@@ -1,4 +1,4 @@
-// Package models — схема sorm для бенчмарков.
+// Package models — the sorm schema for the benchmarks.
 package models
 
 //go:generate go run github.com/dvislobokov/sorm/cmd/sorm gen .

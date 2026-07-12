@@ -6,14 +6,14 @@ import (
 	"fmt"
 )
 
-// Advisory lock на время применения миграций: несколько реплик приложения,
-// стартующих одновременно, не применят один файл дважды и не подерутся
-// за DDL. Замок держится на выделенном соединении (session-scoped).
+// Advisory lock held while migrations are applied: several application
+// replicas starting at once will not apply the same file twice or fight
+// over DDL. The lock is held on a dedicated connection (session-scoped).
 //
-// SQLite не нуждается в advisory lock: база — локальный файл, конкурентные
-// писатели сериализуются самим SQLite.
+// SQLite needs no advisory lock: the database is a local file, and
+// concurrent writers are serialized by SQLite itself.
 
-// lockKey — общий ключ замка sorm-миграций ("github.com/dvislobokov/sorm" в hex).
+// lockKey is the shared lock key for sorm migrations ("sorm" in hex).
 const lockKey int64 = 0x736F726D
 
 func withMigrationLock(ctx context.Context, db *sql.DB, dialect string, fn func() error) error {
@@ -42,7 +42,7 @@ func withMigrationLock(ctx context.Context, db *sql.DB, dialect string, fn func(
 			return fmt.Errorf("github.com/dvislobokov/sorm/migrate: GET_LOCK: %w", err)
 		}
 		if got != 1 {
-			return fmt.Errorf("github.com/dvislobokov/sorm/migrate: GET_LOCK timeout — другая миграция держит замок дольше 300s")
+			return fmt.Errorf("github.com/dvislobokov/sorm/migrate: GET_LOCK timeout — another migration has held the lock for over 300s")
 		}
 		defer conn.ExecContext(context.WithoutCancel(ctx), "SELECT RELEASE_LOCK('sorm_migrations')")
 		return fn()

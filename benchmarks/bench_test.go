@@ -1,8 +1,8 @@
-// Сравнительные бенчмарки sorm против GORM, Ent и raw database/sql.
-// СУБД — SQLite in-memory (pure-Go драйверы, без cgo и сети): меряется
-// overhead библиотек, а не БД.
+// Comparative benchmarks of sorm against GORM, Ent and raw database/sql.
+// The DBMS is in-memory SQLite (pure-Go drivers, no cgo or network):
+// we measure library overhead, not the DB.
 //
-// Запуск: cd benchmarks && go test -bench . -benchmem
+// Run: cd benchmarks && go test -bench . -benchmem
 package benchmarks
 
 import (
@@ -12,14 +12,14 @@ import (
 	"testing"
 
 	entsql "entgo.io/ent/dialect/sql"
-	_ "github.com/glebarez/go-sqlite"      // регистрирует driver "sqlite"
-	gormsqlite "github.com/glebarez/sqlite" // pure-go драйвер для gorm
+	_ "github.com/glebarez/go-sqlite"      // registers driver "sqlite"
+	gormsqlite "github.com/glebarez/sqlite" // pure-Go driver for gorm
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 
 	entclient "sorm-benchmarks/ent"
 	"sorm-benchmarks/models"
-	_ "sorm-benchmarks/models/sormgen" // регистрирует мету BenchUser
+	_ "sorm-benchmarks/models/sormgen" // registers BenchUser metadata
 
 	"github.com/dvislobokov/sorm"
 	"github.com/dvislobokov/sorm/dialect/lite"
@@ -89,7 +89,7 @@ func gormDB(b *testing.B, seed int) *gorm.DB {
 	return gdb
 }
 
-// GormUser — той же формы; отдельный тип, чтобы теги gorm не жили в общих моделях.
+// GormUser — same shape; a separate type so gorm tags don't live in the shared models.
 type GormUser struct {
 	ID     int64 `gorm:"primaryKey"`
 	Name   string
@@ -122,7 +122,7 @@ func entDB(b *testing.B, seed int) *entclient.Client {
 	return client
 }
 
-// --- Query: 1000 строк ---
+// --- Query: 1000 rows ---
 
 func BenchmarkQuery1000_sorm(b *testing.B) {
 	db := sormDB(b, seedRows)
@@ -186,7 +186,7 @@ func BenchmarkQuery1000_raw(b *testing.B) {
 	}
 }
 
-// --- Bulk insert: 100 строк за операцию ---
+// --- Bulk insert: 100 rows per operation ---
 
 func BenchmarkInsert100_sorm(b *testing.B) {
 	db := sormDB(b, 0)
@@ -238,7 +238,7 @@ func BenchmarkInsert100_ent(b *testing.B) {
 	}
 }
 
-// --- Update: одно поле одной строки ---
+// --- Update: one field of one row ---
 
 func BenchmarkUpdateOne_sorm(b *testing.B) {
 	db := sormDB(b, 1)

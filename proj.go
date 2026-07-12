@@ -11,13 +11,13 @@ import (
 	"github.com/dvislobokov/sorm/dialect"
 )
 
-// Проекционный слой: GROUP BY, HAVING, агрегации, произвольные JOIN.
-// Результат — не сущность, а именованная структура R (в Go нет анонимных
-// типов); маппинг колонок → полей тот же, что у RawAs.
-// SQL здесь всегда квалифицирован ("users"."id") — после JOIN имена
-// колонок неоднозначны.
+// Projection layer: GROUP BY, HAVING, aggregations, arbitrary JOINs.
+// The result is not an entity but a named struct R (Go has no anonymous
+// types); the column-to-field mapping is the same as RawAs.
+// SQL here is always qualified ("users"."id") — after a JOIN column names
+// are ambiguous.
 
-// From начинает проекционный запрос от таблицы сущности E.
+// From starts a projection query from the table of entity E.
 func From[E any](db DB) FromBuilder[E] {
 	m := metaFor[E]()
 	return FromBuilder[E]{db: db, d: dialectOf(db), table: m.Table}
@@ -77,8 +77,8 @@ func (q FromBuilder[E]) Offset(n int) FromBuilder[E] {
 	return q
 }
 
-// Join добавляет JOIN-спецификации (создаются методами связей или
-// свободными функциями LeftJoinOn/InnerJoinOn/CrossJoin).
+// Join adds JOIN specifications (created by relation methods or by the
+// free functions LeftJoinOn/InnerJoinOn/CrossJoin).
 func (q FromBuilder[E]) Join(specs ...JoinSpec[E]) FromBuilder[E] {
 	js := slices.Clip(q.joins)
 	for _, s := range specs {
@@ -91,19 +91,19 @@ func (q FromBuilder[E]) Join(specs ...JoinSpec[E]) FromBuilder[E] {
 type joinClause struct {
 	kind  string // "LEFT JOIN" / "INNER JOIN" / "CROSS JOIN"
 	table string
-	on    []node // пусто для CROSS
+	on    []node // empty for CROSS
 }
 
 type JoinSpec[E any] struct{ clause joinClause }
 
-// --- JOIN по связи: оба типа известны дескриптору ---
+// --- JOIN over a relation: both types are known to the descriptor ---
 
-// LeftJoin — LEFT JOIN дочерней таблицы по FK связи; preds добавляются в ON.
+// LeftJoin is a LEFT JOIN of the child table over the relation's FK; preds are added to ON.
 func (r HasMany[E, C]) LeftJoin(preds ...Pred[C]) JoinSpec[E] {
 	return r.join("LEFT JOIN", preds)
 }
 
-// InnerJoin — INNER JOIN дочерней таблицы по FK связи.
+// InnerJoin is an INNER JOIN of the child table over the relation's FK.
 func (r HasMany[E, C]) InnerJoin(preds ...Pred[C]) JoinSpec[E] {
 	return r.join("INNER JOIN", preds)
 }
@@ -117,10 +117,10 @@ func (r HasMany[E, C]) join(kind string, preds []Pred[C]) JoinSpec[E] {
 	return JoinSpec[E]{joinClause{kind, cm.Table, append(on, nodesOf(preds)...)}}
 }
 
-// --- произвольный JOIN ---
+// --- arbitrary JOIN ---
 
-// JoinOn — условие соединения C (присоединяемая) с E (уже в запросе).
-// Типы значений колонок обязаны совпадать — проверяет компилятор.
+// JoinOn is the join condition between C (being joined) and E (already in the query).
+// The column value types must match — enforced by the compiler.
 type JoinOn[C, E any] struct{ left, right colRef }
 
 func ColEq[C, E any, V comparable](joined ColOfV[C, V], existing ColOfV[E, V]) JoinOn[C, E] {
@@ -130,8 +130,8 @@ func ColEq[C, E any, V comparable](joined ColOfV[C, V], existing ColOfV[E, V]) J
 	}
 }
 
-// LeftJoinOn / InnerJoinOn — произвольный JOIN таблицы сущности C;
-// preds по C добавляются в ON.
+// LeftJoinOn / InnerJoinOn is an arbitrary JOIN of entity C's table;
+// preds on C are added to ON.
 func LeftJoinOn[C, E any](on JoinOn[C, E], preds ...Pred[C]) JoinSpec[E] {
 	return joinOn("LEFT JOIN", on, preds)
 }
@@ -140,7 +140,7 @@ func InnerJoinOn[C, E any](on JoinOn[C, E], preds ...Pred[C]) JoinSpec[E] {
 	return joinOn("INNER JOIN", on, preds)
 }
 
-// CrossJoin — декартово произведение с таблицей сущности C.
+// CrossJoin is a Cartesian product with entity C's table.
 func CrossJoin[C, E any]() JoinSpec[E] {
 	return JoinSpec[E]{joinClause{kind: "CROSS JOIN", table: metaFor[C]().Table}}
 }
@@ -158,15 +158,15 @@ func (n joinEqNode) writeSQL(w *sqlWriter) {
 	w.col(n.right)
 }
 
-// --- агрегаты ---
+// --- aggregates ---
 
-// AggExpr — агрегатное выражение с типом значения V: сравнения дают
-// Pred[E] для Having, As(...) — колонку результата.
+// AggExpr is an aggregate expression with value type V: comparisons yield
+// Pred[E] for Having, As(...) yields a result column.
 type AggExpr[E any, V comparable] struct{ n node }
 
-// Агрегаты принимают колонку ЛЮБОЙ сущности (E задаётся явно — это корень
-// запроса): count по колонке ребёнка после JOIN — типичный случай.
-// Принадлежность таблицы проверяется при построении запроса.
+// Aggregates accept a column of ANY entity (E is given explicitly — it is the
+// query root): count over a child column after a JOIN is the typical case.
+// Table membership is checked when the query is built.
 
 func CountAll[E any]() AggExpr[E, int64] {
 	return AggExpr[E, int64]{aggNode{fn: "count", star: true}}
@@ -202,48 +202,48 @@ func (a AggExpr[E, V]) Lte(v V) Pred[E] { return aggPred[E](exprCmpNode{a.n, "<=
 
 func aggPred[E any](n node) Pred[E] { return Pred[E]{n: n, agg: true} }
 
-// --- список SELECT ---
+// --- SELECT list ---
 
-// SelectExpr — колонка результата проекции.
+// SelectExpr is a column of the projection result.
 type SelectExpr[E any] struct {
 	n     node
-	alias string // имя колонки результата (для маппинга в R)
+	alias string // result column name (for mapping into R)
 }
 
 type colNode struct{ ref colRef }
 
 func (n colNode) writeSQL(w *sqlWriter) { w.col(n.ref) }
 
-// Field — колонка корневой сущности (E выводится); имя результата = имя колонки.
+// Field is a column of the root entity (E is inferred); the result name = the column name.
 func Field[E any](c ColOf[E]) SelectExpr[E] {
 	return SelectExpr[E]{n: colNode{refOf(c)}, alias: c.ColName()}
 }
 
-// FieldAs — колонка с алиасом (например, при коллизии имён после JOIN).
+// FieldAs is a column with an alias (e.g. on a name collision after a JOIN).
 func FieldAs[E any](c ColOf[E], alias string) SelectExpr[E] {
 	return SelectExpr[E]{n: colNode{refOf(c)}, alias: alias}
 }
 
-// FieldOf — колонка присоединённой сущности («ослабленный режим», E — явно;
-// принадлежность таблицы валидируется при построении).
+// FieldOf is a column of a joined entity ("relaxed mode", E is explicit;
+// table membership is validated at build time).
 func FieldOf[E any](c AnyCol) SelectExpr[E] {
 	return SelectExpr[E]{n: colNode{refOf(c)}, alias: c.ColName()}
 }
 
-// FieldOfAs — то же с алиасом.
+// FieldOfAs is the same with an alias.
 func FieldOfAs[E any](c AnyCol, alias string) SelectExpr[E] {
 	return SelectExpr[E]{n: colNode{refOf(c)}, alias: alias}
 }
 
-// As — агрегат с алиасом.
+// As is an aggregate with an alias.
 func As[E any, V comparable](a AggExpr[E, V], alias string) SelectExpr[E] {
 	return SelectExpr[E]{n: a.n, alias: alias}
 }
 
-// --- исполнение ---
+// --- execution ---
 
-// Project выполняет проекцию в структуру R. Соответствие алиасов выражений
-// и полей R (тег `sorm:` или snake_case) проверяется строго до запроса.
+// Project performs a projection into struct R. The match between expression
+// aliases and R's fields (`sorm:` tag or snake_case) is checked strictly before the query.
 func Project[R any, E any](q FromBuilder[E], exprs ...SelectExpr[E]) ProjQuery[R] {
 	if q.err != nil {
 		return ProjQuery[R]{err: q.err}
@@ -256,8 +256,8 @@ func Project[R any, E any](q FromBuilder[E], exprs ...SelectExpr[E]) ProjQuery[R
 		return ProjQuery[R]{err: err}
 	}
 
-	// Валидация принадлежности: колонки выражений и GROUP BY обязаны быть
-	// из FROM или присоединённых таблиц — внятная ошибка вместо SQL-ошибки сервера.
+	// Membership validation: expression and GROUP BY columns must come from
+	// the FROM table or joined tables — a clear error instead of a server-side SQL error.
 	allowed := map[string]bool{q.table: true}
 	for _, j := range q.joins {
 		allowed[j.table] = true
@@ -288,7 +288,7 @@ func Project[R any, E any](q FromBuilder[E], exprs ...SelectExpr[E]) ProjQuery[R
 		}
 	}
 
-	// Строгий маппинг: каждый expr — в поле, каждое поле — из expr.
+	// Strict mapping: every expr goes to a field, every field comes from an expr.
 	fieldIdx := make([]int, len(exprs))
 	used := map[string]bool{}
 	var missing []string

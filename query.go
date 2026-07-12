@@ -11,7 +11,7 @@ import (
 	"github.com/dvislobokov/sorm/dialect/pg"
 )
 
-// defaultDialect — фолбэк для инспекции SQL без подключения (Query[E](nil).ToSQL()).
+// defaultDialect is a fallback for inspecting SQL without a connection (Query[E](nil).ToSQL()).
 var defaultDialect dialect.Dialect = pg.Dialect{}
 
 func dialectOf(db DB) dialect.Dialect {
@@ -21,9 +21,9 @@ func dialectOf(db DB) dialect.Dialect {
 	return db.Dialect()
 }
 
-// Query начинает типизированный запрос по сущности E.
-// Билдер иммутабелен: каждый метод возвращает копию, переиспользование
-// базового билдера безопасно (никакого state-leak между запросами).
+// Query starts a typed query over entity E.
+// The builder is immutable: every method returns a copy, so reusing a base
+// builder is safe (no state leaks between queries).
 func Query[E any](db DB) QueryBuilder[E] {
 	return QueryBuilder[E]{db: db, meta: metaFor[E](), d: dialectOf(db)}
 }
@@ -40,7 +40,7 @@ type QueryBuilder[E any] struct {
 	offset   *int
 }
 
-// Where добавляет условия; несколько Where и несколько аргументов — AND.
+// Where adds conditions; multiple Where calls and multiple arguments are ANDed.
 func (q QueryBuilder[E]) Where(ps ...Pred[E]) QueryBuilder[E] {
 	q.preds = append(slices.Clip(q.preds), ps...)
 	return q
@@ -51,8 +51,8 @@ func (q QueryBuilder[E]) OrderBy(os ...Order[E]) QueryBuilder[E] {
 	return q
 }
 
-// With добавляет eager loading связей (спецификации создаются методом
-// Include на дескрипторах связей: gen.User.Posts.Include(...)).
+// With adds eager loading of relations (specs are created by the Include
+// method on relation descriptors: gen.User.Posts.Include(...)).
 func (q QueryBuilder[E]) With(specs ...IncludeSpec[E]) QueryBuilder[E] {
 	q.includes = append(slices.Clip(q.includes), specs...)
 	return q
@@ -68,12 +68,12 @@ func (q QueryBuilder[E]) Offset(n int) QueryBuilder[E] {
 	return q
 }
 
-// ToSQL возвращает итоговый SQL и аргументы — инспекция вместо магии.
+// ToSQL returns the final SQL and arguments — inspection instead of magic.
 func (q QueryBuilder[E]) ToSQL() (string, []any) {
 	return q.buildSelect(selectColumns(q.d, q.meta.SelectCols))
 }
 
-// All выполняет запрос без трекинга. Пустой результат — пустой слайс, nil error.
+// All runs the query without tracking. An empty result is an empty slice, nil error.
 func (q QueryBuilder[E]) All(ctx context.Context) ([]*E, error) {
 	sqlStr, args := q.ToSQL()
 	rows, err := q.db.Query(ctx, sqlStr, args...)
@@ -90,16 +90,16 @@ func (q QueryBuilder[E]) All(ctx context.Context) ([]*E, error) {
 		}
 		out = append(out, e)
 	}
-	// Закрываем ДО загрузки связей: на однососединительном DB (pgx.Tx)
-	// нельзя открыть второй запрос поверх активного.
+	// Close BEFORE loading relations: on a single-connection DB (pgx.Tx)
+	// a second query cannot be opened over an active one.
 	rows.Close()
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("sorm: select %s: %w", q.meta.Table, err)
 	}
 
-	// Identity map: до загрузки связей, чтобы дети цеплялись к каноническим
-	// указателям. Уже отслеживаемая строка → существующий объект, локальные
-	// изменения не перезатираются.
+	// Identity map: before loading relations, so children attach to canonical
+	// pointers. An already-tracked row maps to the existing object; local
+	// changes are not overwritten.
 	if q.sess != nil {
 		st := storeOf[E](q.sess)
 		for i, e := range out {
@@ -115,9 +115,9 @@ func (q QueryBuilder[E]) All(ctx context.Context) ([]*E, error) {
 	return out, nil
 }
 
-// Iter — стриминг результата: строки выдаются по мере чтения, без загрузки
-// всей выборки в память. Несовместим с With (eager loading требует полного
-// набора родителей) — в этом случае итератор выдаёт одну ошибку.
+// Iter streams the result: rows are yielded as they are read, without loading
+// the whole result set into memory. Incompatible with With (eager loading
+// requires the full set of parents) — in that case the iterator yields a single error.
 //
 //	for u, err := range sorm.Query[models.User](db).Iter(ctx) {
 //	    if err != nil { return err }
@@ -156,7 +156,7 @@ func (q QueryBuilder[E]) Iter(ctx context.Context) iter.Seq2[*E, error] {
 	}
 }
 
-// One возвращает первую строку или ErrNotFound.
+// One returns the first row or ErrNotFound.
 func (q QueryBuilder[E]) One(ctx context.Context) (*E, error) {
 	all, err := q.Limit(1).All(ctx)
 	if err != nil {
@@ -169,7 +169,7 @@ func (q QueryBuilder[E]) One(ctx context.Context) (*E, error) {
 }
 
 func (q QueryBuilder[E]) Count(ctx context.Context) (int64, error) {
-	// count(*) игнорирует ORDER BY/LIMIT/OFFSET исходного билдера.
+	// count(*) ignores ORDER BY/LIMIT/OFFSET of the original builder.
 	base := q
 	base.orders = nil
 	base.limit = nil

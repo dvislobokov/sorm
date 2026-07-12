@@ -7,23 +7,23 @@ import (
 	"time"
 )
 
-// retryClassifier — опциональная способность драйверного адаптера
-// распознавать transient-ошибки (serialization failure, deadlock,
-// lock timeout), после которых транзакцию имеет смысл повторить.
+// retryClassifier — an optional capability of a driver adapter to
+// recognize transient errors (serialization failure, deadlock,
+// lock timeout) after which retrying the transaction makes sense.
 type retryClassifier interface {
 	RetryableError(err error) bool
 }
 
-// RunInTx выполняет fn в транзакции: commit при nil, rollback при ошибке.
-// Если адаптер классифицирует ошибку как transient (deadlock, serialization
-// failure), транзакция повторяется с экспоненциальным backoff'ом —
-// до 3 повторов. fn может быть вызвана несколько раз: побочные эффекты
-// вне БД должны быть идемпотентны.
+// RunInTx runs fn in a transaction: commit on nil, rollback on error.
+// If the adapter classifies the error as transient (deadlock, serialization
+// failure), the transaction is retried with exponential backoff —
+// up to 3 retries. fn may be called multiple times: side effects
+// outside the DB must be idempotent.
 //
-// Сессии внутри работают естественно: NewSession(tx).SaveChanges выполнит
-// flush в этой транзакции, не открывая вложенную.
+// Sessions work naturally inside: NewSession(tx).SaveChanges flushes
+// within this transaction without opening a nested one.
 func RunInTx(ctx context.Context, db DB, fn func(tx Tx) error) error {
-	const maxAttempts = 4 // 1 попытка + 3 повтора
+	const maxAttempts = 4 // 1 attempt + 3 retries
 	backoff := 10 * time.Millisecond
 
 	var lastErr error
@@ -39,7 +39,7 @@ func RunInTx(ctx context.Context, db DB, fn func(tx Tx) error) error {
 		if attempt == maxAttempts {
 			break
 		}
-		// джиттер, чтобы конкуренты не бились в такт
+		// jitter so that competitors don't retry in lockstep
 		sleep := backoff + time.Duration(rand.Int63n(int64(backoff)))
 		select {
 		case <-ctx.Done():

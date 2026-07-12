@@ -10,8 +10,8 @@ import (
 	"github.com/dvislobokov/sorm/migrate"
 )
 
-// Гонка реплик: несколько экземпляров одновременно вызывают Up —
-// каждый файл миграции должен примениться ровно один раз.
+// Replica race: several instances call Up concurrently —
+// each migration file must be applied exactly once.
 func TestConcurrentUpPostgres(t *testing.T) {
 	dsn := pgDSN(t)
 	ctx := context.Background()
@@ -32,8 +32,8 @@ func TestConcurrentUpPostgres(t *testing.T) {
 		}
 	}
 
-	// Каталог миграций: генерируем диффом на sqlite нельзя (диалект другой) —
-	// собираем PG-файл вручную из простых statements.
+	// Migration directory: cannot generate it with a diff on sqlite (different
+	// dialect) — assemble the PG file by hand from simple statements.
 	dir := t.TempDir()
 	writeFile(t, dir, "0001_users.sql", `
 CREATE TABLE users (id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY, email TEXT NOT NULL UNIQUE);
@@ -70,19 +70,19 @@ CREATE TABLE posts (id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY, author_i
 	close(applied)
 
 	for err := range errs {
-		t.Fatalf("реплика упала: %v", err)
+		t.Fatalf("replica failed: %v", err)
 	}
 	total := 0
 	for n := range applied {
 		total += n
 	}
 	if total != 2 {
-		t.Fatalf("суммарно применено %d файлов, want 2 (каждый ровно один раз)", total)
+		t.Fatalf("%d files applied in total, want 2 (each exactly once)", total)
 	}
 
 	var cnt int
 	if err := setup.QueryRow(`SELECT count(*) FROM ` + migrate.HistoryTable).Scan(&cnt); err != nil || cnt != 2 {
-		t.Fatalf("история: %d записей (err=%v), want 2", cnt, err)
+		t.Fatalf("history: %d records (err=%v), want 2", cnt, err)
 	}
 }
 

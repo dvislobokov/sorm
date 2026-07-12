@@ -6,17 +6,17 @@ import (
 	"sync"
 )
 
-// TableDef — диалект-нейтральное описание таблицы сущности. Генерируется
-// `sorm gen` и регистрируется вместе с метой; используется миграциями
-// (sorm/migrate, `sorm schema`) как источник желаемой схемы.
+// TableDef — a dialect-neutral description of an entity's table. Generated
+// by `sorm gen` and registered alongside the meta; used by migrations
+// (sorm/migrate, `sorm schema`) as the source of the desired schema.
 type TableDef struct {
 	Name    string
 	Columns []ColumnDef
 	Indexes []IndexDef
 }
 
-// IndexDef — индекс таблицы. Простые (в т.ч. композитные) индексы задаются
-// тегами `index:`/`uniqueIndex:`; кастомные — опциональным методом модели:
+// IndexDef — a table index. Simple (including composite) indexes are declared
+// with `index:`/`uniqueIndex:` tags; custom ones via an optional model method:
 //
 //	func (Post) Indexes() []sorm.IndexDef {
 //	    return []sorm.IndexDef{
@@ -28,24 +28,24 @@ type TableDef struct {
 //	    }
 //	}
 //
-// `sorm gen` объединяет теги и метод в TableDef.
+// `sorm gen` merges the tags and the method into the TableDef.
 type IndexDef struct {
 	Name    string
-	Columns []string    // простые ASC-колонки (эквивалент Parts без Desc/Expr)
-	Parts   []IndexPart // расширенный вариант: порядок сортировки и выражения
+	Columns []string    // simple ASC columns (equivalent to Parts without Desc/Expr)
+	Parts   []IndexPart // extended form: sort order and expressions
 	Unique  bool
-	Type    string // тип индекса: "gin"/"brin" (PG, USING), "fulltext" (MySQL)
-	Where   string // частичный индекс (PG, SQLite); сырое SQL-условие
+	Type    string // index type: "gin"/"brin" (PG, USING), "fulltext" (MySQL)
+	Where   string // partial index (PG, SQLite); raw SQL condition
 }
 
-// IndexPart — элемент индекса: колонка или выражение.
+// IndexPart — an index element: a column or an expression.
 type IndexPart struct {
-	Column string // имя колонки (взаимоисключимо с Expr)
-	Expr   string // сырое выражение: to_tsvector(...), lower(email), ...
+	Column string // column name (mutually exclusive with Expr)
+	Expr   string // raw expression: to_tsvector(...), lower(email), ...
 	Desc   bool
 }
 
-// parts нормализует Columns+Parts в единый список.
+// parts normalizes Columns+Parts into a single list.
 func (ix IndexDef) parts() []IndexPart {
 	out := make([]IndexPart, 0, len(ix.Columns)+len(ix.Parts))
 	for _, c := range ix.Columns {
@@ -54,10 +54,10 @@ func (ix IndexDef) parts() []IndexPart {
 	return append(out, ix.Parts...)
 }
 
-// IndexParts — нормализованный список элементов индекса (для генераторов).
+// IndexParts — the normalized list of index elements (for generators).
 func (ix IndexDef) IndexParts() []IndexPart { return ix.parts() }
 
-// ColumnDef — описание колонки.
+// ColumnDef — a column description.
 type ColumnDef struct {
 	Name     string
 	GoKind   string // "bool","string","int*","uint*","float32/64","time","bytes"
@@ -65,9 +65,9 @@ type ColumnDef struct {
 	Unique   bool
 	PK       bool
 	Auto     bool
-	SQLType  string // переопределение из тега type:
-	RefTable string // FK: целевая таблица
-	RefCol   string // FK: целевая колонка
+	SQLType  string // override from the type: tag
+	RefTable string // FK: target table
+	RefCol   string // FK: target column
 }
 
 var (
@@ -75,7 +75,7 @@ var (
 	tableDefs   []TableDef
 )
 
-// RegisterTable вызывается из init() сгенерированного пакета.
+// RegisterTable is called from the generated package's init().
 func RegisterTable(def TableDef) {
 	tableDefsMu.Lock()
 	defer tableDefsMu.Unlock()
@@ -88,7 +88,7 @@ func RegisterTable(def TableDef) {
 	tableDefs = append(tableDefs, def)
 }
 
-// UnregisterTable удаляет описание таблицы (в основном для тестов миграций).
+// UnregisterTable removes a table definition (mainly for migration tests).
 func UnregisterTable(name string) {
 	tableDefsMu.Lock()
 	defer tableDefsMu.Unlock()
@@ -100,7 +100,7 @@ func UnregisterTable(name string) {
 	}
 }
 
-// Tables возвращает все зарегистрированные описания (детерминированный порядок).
+// Tables returns all registered definitions (deterministic order).
 func Tables() []TableDef {
 	tableDefsMu.Lock()
 	defer tableDefsMu.Unlock()
@@ -109,8 +109,8 @@ func Tables() []TableDef {
 	return out
 }
 
-// SQLTypeFor — тип колонки в SQL для диалекта ("postgres","mysql","sqlite").
-// Единая точка маппинга для DDL-генератора и миграций.
+// SQLTypeFor — the column's SQL type for a dialect ("postgres","mysql","sqlite").
+// Single mapping point for the DDL generator and migrations.
 func SQLTypeFor(dialect string, c ColumnDef) string {
 	if c.SQLType != "" {
 		return strings.ToUpper(c.SQLType)
@@ -159,8 +159,8 @@ func myTypeOf(c ColumnDef) string {
 	case "bool":
 		return "BOOLEAN"
 	case "string":
-		// TEXT в MySQL не индексируется без длины — дефолт VARCHAR(255),
-		// длиннее — через тег type:.
+		// TEXT in MySQL cannot be indexed without a length — default is VARCHAR(255);
+		// use the type: tag for longer values.
 		return "VARCHAR(255)"
 	case "int8", "int16", "uint8":
 		return "SMALLINT"

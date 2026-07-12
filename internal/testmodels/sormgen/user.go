@@ -12,7 +12,7 @@ import (
 	models "github.com/dvislobokov/sorm/internal/testmodels"
 )
 
-// User — типизированные дескрипторы колонок models.User.
+// User holds typed column descriptors for models.User.
 var User = struct {
 	ID        sorm.OrdCol[models.User, int64]
 	Email     sorm.StrCol[models.User]

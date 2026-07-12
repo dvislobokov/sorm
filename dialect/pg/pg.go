@@ -1,4 +1,4 @@
-// Package pg — диалект PostgreSQL.
+// Package pg implements the PostgreSQL dialect.
 package pg
 
 import (

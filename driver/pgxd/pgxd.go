@@ -1,5 +1,5 @@
-// Package pgxd — адаптер pgx v5 (PostgreSQL): один roundtrip на батч
-// через pgx.Batch. Оборачивает *pgxpool.Pool, *pgx.Conn или pgx.Tx.
+// Package pgxd is the pgx v5 adapter (PostgreSQL): one roundtrip per batch
+// via pgx.Batch. It wraps *pgxpool.Pool, *pgx.Conn, or pgx.Tx.
 package pgxd
 
 import (
@@ -15,14 +15,14 @@ import (
 	"github.com/dvislobokov/sorm/dialect/pg"
 )
 
-// Pgx — общая поверхность pgxpool.Pool / *pgx.Conn / pgx.Tx.
+// Pgx is the common surface of pgxpool.Pool / *pgx.Conn / pgx.Tx.
 type Pgx interface {
 	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
 	Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error)
 	SendBatch(ctx context.Context, b *pgx.Batch) pgx.BatchResults
 }
 
-// Wrap оборачивает pgx-совместимый пул/соединение в sorm.DB.
+// Wrap wraps a pgx-compatible pool/connection into a sorm.DB.
 func Wrap(p Pgx) sorm.DB { return db{p} }
 
 type db struct{ p Pgx }
@@ -45,7 +45,7 @@ func (d db) Exec(ctx context.Context, sql string, args ...any) (int64, error) {
 	return ct.RowsAffected(), nil
 }
 
-// collectIDs читает RETURNING-строки multi-row INSERT'а.
+// collectIDs reads the RETURNING rows of a multi-row INSERT.
 func collectIDs(br pgx.BatchResults, n int) ([]int64, error) {
 	rows, err := br.Query()
 	if err != nil {
@@ -64,13 +64,13 @@ func collectIDs(br pgx.BatchResults, n int) ([]int64, error) {
 		return nil, err
 	}
 	if len(ids) != n {
-		return nil, fmt.Errorf("pgxd: RETURNING вернул %d id, ожидали %d", len(ids), n)
+		return nil, fmt.Errorf("pgxd: RETURNING returned %d ids, expected %d", len(ids), n)
 	}
 	return ids, nil
 }
 
-// translate конвертирует ошибки констрейнтов PostgreSQL (класс 23xxx)
-// в типизированный *sorm.ConstraintError.
+// translate converts PostgreSQL constraint errors (class 23xxx)
+// into a typed *sorm.ConstraintError.
 func translate(err error) error {
 	var pgErr *pgconn.PgError
 	if err == nil || !errors.As(err, &pgErr) {
@@ -141,8 +141,9 @@ func (d db) Begin(ctx context.Context) (sorm.Tx, error) {
 	return tx{db{pgtx}, pgtx}, nil
 }
 
-// RetryableError — transient-ошибки PostgreSQL, после которых транзакцию
-// имеет смысл повторить: serialization_failure (40001) и deadlock_detected (40P01).
+// RetryableError reports transient PostgreSQL errors after which the
+// transaction is worth retrying: serialization_failure (40001) and
+// deadlock_detected (40P01).
 func (d db) RetryableError(err error) bool {
 	var pgErr *pgconn.PgError
 	if !errors.As(err, &pgErr) {

@@ -1,6 +1,6 @@
-// Package parse разбирает пакет моделей: находит структуры-сущности
-// (маркер — ровно одно поле с тегом `sorm:"pk..."`), классифицирует поля
-// по Go-типам и валидирует схему до генерации.
+// Package parse parses the models package: it finds entity structs
+// (marked by exactly one field with a `sorm:"pk..."` tag), classifies
+// fields by Go type, and validates the schema before generation.
 package parse
 
 import (
@@ -16,33 +16,33 @@ import (
 type Kind int
 
 const (
-	KindEq    Kind = iota // Col: bool и прочие только-равенство
-	KindOrd               // OrdCol: числа, time.Time, именованные упорядоченные
+	KindEq    Kind = iota // Col: bool and other equality-only types
+	KindOrd               // OrdCol: numbers, time.Time, named ordered types
 	KindStr               // StrCol: string
 	KindBytes             // BytesCol: []byte
 )
 
 type Schema struct {
-	PkgPath  string // import path пакета моделей
+	PkgPath  string // import path of the models package
 	PkgName  string
-	Entities []Entity // отсортированы по имени — детерминизм генерации
+	Entities []Entity // sorted by name — deterministic generation
 }
 
 type Entity struct {
-	Name         string // имя Go-типа
+	Name         string // Go type name
 	Table        string
-	Fields       []Field // только колонки, в порядке объявления
+	Fields       []Field // columns only, in declaration order
 	Relations    []Relation
-	Indexes      []Index // из тегов index:/uniqueIndex: (композитные — по общему имени)
-	// HasIndexesMethod: у типа есть метод Indexes() []sorm.IndexDef —
-	// кастомные индексы (DESC, выражения, полнотекст, частичные);
-	// сгенерированный код объединит его с тегами.
+	Indexes      []Index // from index:/uniqueIndex: tags (composite — via a shared name)
+	// HasIndexesMethod: the type has an Indexes() []sorm.IndexDef method —
+	// custom indexes (DESC, expressions, full-text, partial);
+	// the generated code merges it with the tag-defined ones.
 	HasIndexesMethod bool
-	PKIndex          int // индекс в Fields
-	VersionIndex     int // -1 если нет
+	PKIndex          int // index into Fields
+	VersionIndex     int // -1 if absent
 }
 
-// Index — индекс таблицы; колонки в порядке объявления полей.
+// Index is a table index; columns follow field declaration order.
 type Index struct {
 	Name   string
 	Cols   []string
@@ -55,31 +55,31 @@ type Field struct {
 	GoName   string
 	Col      string
 	Kind     Kind
-	TypeExpr string // тип для дескриптора/снапшота: "int64", "time.Time", "models.Status"
-	Nullable bool   // поле — указатель; TypeExpr уже разыменован
+	TypeExpr string // type for the descriptor/snapshot: "int64", "time.Time", "models.Status"
+	Nullable bool   // field is a pointer; TypeExpr is already dereferenced
 	IsTime   bool
 	IsBytes  bool
 	PK       bool
 	Auto     bool
 	Unique   bool
 	Version  bool
-	FK       string // "User.ID" из тега fk:, пусто если нет
-	SQLType  string // переопределение типа колонки из тега type:
-	// BasicKind — underlying-тип для маппинга в SQL: "string","int64",...,
-	// "time","bytes" (независим от именованных типов).
+	FK       string // "User.ID" from the fk: tag, empty if absent
+	SQLType  string // column type override from the type: tag
+	// BasicKind — underlying type for the SQL mapping: "string","int64",...,
+	// "time","bytes" (independent of named types).
 	BasicKind string
 }
 
 type Relation struct {
 	GoName    string
 	Kind      string // "hasMany" | "belongsTo" | "hasOne" | "many2many"
-	Target    string // имя сущности
-	FKField   string // Go-имя FK-поля (не для many2many)
-	JoinTable string // только many2many
+	Target    string // entity name
+	FKField   string // Go name of the FK field (not for many2many)
+	JoinTable string // many2many only
 	Slice     bool
 }
 
-// Load разбирает пакет моделей в dir.
+// Load parses the models package in dir.
 func Load(dir string) (*Schema, error) {
 	cfg := &packages.Config{
 		Mode: packages.NeedName | packages.NeedTypes | packages.NeedTypesInfo,
@@ -103,7 +103,7 @@ func Load(dir string) (*Schema, error) {
 	names := scope.Names()
 	sort.Strings(names)
 
-	// Первый проход: имена сущностей (нужны для валидации навигаций).
+	// First pass: entity names (needed to validate navigations).
 	entityNames := map[string]bool{}
 	for _, name := range names {
 		if st := structOf(scope.Lookup(name)); st != nil && hasPKTag(st) {
@@ -150,7 +150,7 @@ func structOf(obj types.Object) *types.Struct {
 	return st
 }
 
-// hasIndexesMethod — есть ли у типа метод Indexes() []sorm.IndexDef.
+// hasIndexesMethod reports whether the type has an Indexes() []sorm.IndexDef method.
 func hasIndexesMethod(obj types.Object) bool {
 	named, ok := obj.(*types.TypeName).Type().(*types.Named)
 	if !ok {
@@ -184,7 +184,7 @@ func parseEntity(name string, st *types.Struct, modelsPkg *types.Package, entity
 
 	qual := func(p *types.Package) string {
 		if p == modelsPkg {
-			return "models" // алиас импорта в сгенерированном пакете
+			return "models" // import alias in the generated package
 		}
 		return p.Name()
 	}
@@ -192,7 +192,7 @@ func parseEntity(name string, st *types.Struct, modelsPkg *types.Package, entity
 	for i := 0; i < st.NumFields(); i++ {
 		fv := st.Field(i)
 		if !fv.Exported() {
-			continue // неэкспортируемое поле не может быть колонкой
+			continue // an unexported field cannot be a column
 		}
 		opts := tagOptions(st.Tag(i))
 		if opts.has("-") {
@@ -202,7 +202,7 @@ func parseEntity(name string, st *types.Struct, modelsPkg *types.Package, entity
 			ent.Table = tbl
 		}
 
-		// Навигация?
+		// A navigation?
 		if rel, ok := parseRelation(fv, opts, modelsPkg, entityNames); ok {
 			if rel == nil {
 				return nil, fmt.Errorf(
@@ -247,8 +247,8 @@ func parseEntity(name string, st *types.Struct, modelsPkg *types.Package, entity
 	return ent, nil
 }
 
-// parseRelation возвращает (rel, true) если поле — навигация по своему типу.
-// rel == nil при отсутствии обязательного тега.
+// parseRelation returns (rel, true) if the field is a navigation by its type.
+// rel == nil when the required tag is missing.
 func parseRelation(fv *types.Var, opts tagOpts, modelsPkg *types.Package, entityNames map[string]bool) (*Relation, bool) {
 	target, slice := navigationTarget(fv.Type(), modelsPkg)
 	if target == "" || !entityNames[target] {
@@ -262,10 +262,10 @@ func parseRelation(fv *types.Var, opts tagOpts, modelsPkg *types.Package, entity
 	if jt, ok := opts.value("many2many"); ok {
 		return &Relation{GoName: fv.Name(), Kind: "many2many", Target: target, JoinTable: jt, Slice: slice}, true
 	}
-	return nil, true // тип навигационный, тега нет — ошибка выше
+	return nil, true // navigation type without a tag — error raised by the caller
 }
 
-// navigationTarget: []*T / []T / *T, где T — именованная структура пакета моделей.
+// navigationTarget: []*T / []T / *T, where T is a named struct from the models package.
 func navigationTarget(t types.Type, modelsPkg *types.Package) (name string, slice bool) {
 	if sl, ok := t.(*types.Slice); ok {
 		n := namedStructIn(sl.Elem(), modelsPkg)
@@ -336,7 +336,7 @@ func parseColumn(fv *types.Var, opts tagOpts, qual types.Qualifier) (*Field, err
 			if f.TypeExpr == "string" {
 				f.Kind = KindStr
 			} else {
-				f.Kind = KindOrd // именованный строковый тип: без Like-предикатов, но типобезопасно
+				f.Kind = KindOrd // named string type: no Like predicates, but type-safe
 			}
 		case info&types.IsNumeric != 0:
 			f.Kind = KindOrd
@@ -356,14 +356,14 @@ func validateRelations(s *Schema) error {
 		for _, r := range e.Relations {
 			if r.Kind == "many2many" {
 				if r.JoinTable == "" {
-					return fmt.Errorf("%s.%s: many2many требует имя join-таблицы", e.Name, r.GoName)
+					return fmt.Errorf("%s.%s: many2many requires a join table name", e.Name, r.GoName)
 				}
 				if !r.Slice {
-					return fmt.Errorf("%s.%s: many2many должно быть слайсом", e.Name, r.GoName)
+					return fmt.Errorf("%s.%s: many2many must be a slice", e.Name, r.GoName)
 				}
 				continue
 			}
-			// FK-поле живёт на стороне «многих»: у target для hasMany, у себя для belongsTo/hasOne-владельца.
+			// The FK field lives on the "many" side: on target for hasMany, on self for belongsTo/hasOne owner.
 			owner := byName[r.Target]
 			if r.Kind == "belongsTo" {
 				owner = byName[e.Name]
@@ -381,9 +381,9 @@ func validateRelations(s *Schema) error {
 	return nil
 }
 
-// collectIndexes собирает индексы из тегов `index[:name]` и
-// `uniqueIndex[:name]`: поля с одним именем образуют композитный индекс
-// в порядке объявления; без имени — одноколоночный idx_<table>_<col>.
+// collectIndexes gathers indexes from `index[:name]` and
+// `uniqueIndex[:name]` tags: fields sharing a name form a composite index
+// in declaration order; without a name — a single-column idx_<table>_<col>.
 func collectIndexes(ent *Entity, st *types.Struct) error {
 	byName := map[string]*Index{}
 	fieldPos := 0
@@ -396,7 +396,7 @@ func collectIndexes(ent *Entity, st *types.Struct) error {
 		if opts.has("-") {
 			continue
 		}
-		// колонка ли это поле (навигации пропускаем): сверяем по позиции в Fields
+		// is this field a column (navigations are skipped): match by position in Fields
 		if fieldPos >= len(ent.Fields) || ent.Fields[fieldPos].GoName != fv.Name() {
 			continue
 		}
@@ -416,17 +416,17 @@ func collectIndexes(ent *Entity, st *types.Struct) error {
 			}
 			if ix, ok := byName[name]; ok {
 				if ix.Unique != kind.unique {
-					return fmt.Errorf("index %q: смешаны index и uniqueIndex", name)
+					return fmt.Errorf("index %q: mixes index and uniqueIndex", name)
 				}
 				ix.Cols = append(ix.Cols, col)
 				continue
 			}
 			ix := &Index{Name: name, Cols: []string{col}, Unique: kind.unique}
 			byName[name] = ix
-			ent.Indexes = append(ent.Indexes, Index{Name: name}) // позиция; содержимое ниже
+			ent.Indexes = append(ent.Indexes, Index{Name: name}) // placeholder; filled in below
 		}
 	}
-	// композитные индексы дособрались в byName — материализуем в порядке появления
+	// composite indexes are fully assembled in byName — materialize in order of appearance
 	for i := range ent.Indexes {
 		ent.Indexes[i] = *byName[ent.Indexes[i].Name]
 	}
@@ -484,7 +484,7 @@ func isIntExpr(expr string) bool {
 	return false
 }
 
-// --- теги ---
+// --- tags ---
 
 type tagOpts []string
 
@@ -514,16 +514,16 @@ func (o tagOpts) value(name string) (string, bool) {
 	return "", false
 }
 
-// --- имена ---
+// --- names ---
 
-// Snake — экспорт snake_case для генераторов (имена колонок join-таблиц).
+// Snake exports snake_case for generators (join-table column names).
 func Snake(s string) string { return snake(s) }
 
 func snake(s string) string {
 	var b strings.Builder
 	for i, r := range s {
 		if r >= 'A' && r <= 'Z' {
-			// граница слова: не первый символ и (предыдущий строчный ИЛИ следующий строчный — конец аббревиатуры)
+			// word boundary: not the first char and (previous is lowercase OR next is lowercase — end of an acronym)
 			if i > 0 && (isLower(rune(s[i-1])) || (i+1 < len(s) && isLower(rune(s[i+1])))) {
 				b.WriteByte('_')
 			}

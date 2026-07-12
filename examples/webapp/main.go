@@ -1,8 +1,8 @@
-// Todo-API: net/http + sorm + PostgreSQL.
+// Todo API: net/http + sorm + PostgreSQL.
 //
-// При старте применяет версионные миграции (migrate.Up), затем поднимает
-// HTTP-сервер. Показывает: сессию (Unit of Work) в хендлерах, optimistic
-// concurrency → HTTP 409, eager loading, динамическую композицию фильтров.
+// On startup it applies versioned migrations (migrate.Up), then starts the
+// HTTP server. Demonstrates: a session (Unit of Work) in handlers, optimistic
+// concurrency → HTTP 409, eager loading, dynamic filter composition.
 package main
 
 import (
@@ -17,7 +17,7 @@ import (
 	"strconv"
 	"time"
 
-	_ "github.com/jackc/pgx/v5/stdlib" // драйвер "pgx" для database/sql (миграции)
+	_ "github.com/jackc/pgx/v5/stdlib" // "pgx" driver for database/sql (migrations)
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/dvislobokov/sorm"
@@ -55,8 +55,8 @@ func main() {
 	log.Fatal(http.ListenAndServe(addr, mux))
 }
 
-// migrateUp применяет неприменённые файлы миграций (с ретраями: в compose
-// приложение может стартовать раньше готовности БД).
+// migrateUp applies pending migration files (with retries: under compose
+// the app may start before the DB is ready).
 func migrateUp(ctx context.Context, dsn, dir string) error {
 	sdb, err := sql.Open("pgx", dsn)
 	if err != nil {
@@ -73,14 +73,14 @@ func migrateUp(ctx context.Context, dsn, dir string) error {
 		if attempt >= 10 {
 			return fmt.Errorf("migrate up: %w", err)
 		}
-		log.Printf("migrate up (попытка %d): %v", attempt, err)
+		log.Printf("migrate up (attempt %d): %v", attempt, err)
 		time.Sleep(2 * time.Second)
 	}
 	for _, f := range applied {
-		log.Println("применена миграция", f)
+		log.Println("applied migration", f)
 	}
 	if len(applied) == 0 {
-		log.Println("миграции: всё уже применено")
+		log.Println("migrations: everything already applied")
 	}
 	return nil
 }
@@ -96,7 +96,7 @@ func (s *server) createUser(w http.ResponseWriter, r *http.Request) {
 		Email string `json:"email"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&in); err != nil || in.Name == "" || in.Email == "" {
-		httpError(w, http.StatusBadRequest, "нужны name и email")
+		httpError(w, http.StatusBadRequest, "name and email are required")
 		return
 	}
 
@@ -110,7 +110,7 @@ func (s *server) createUser(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, u)
 }
 
-// GET /users — пользователи с задачами (eager loading, split query).
+// GET /users — users with their tasks (eager loading, split query).
 func (s *server) listUsers(w http.ResponseWriter, r *http.Request) {
 	u := gen.User
 	users, err := sorm.Query[models.User](s.db).
@@ -132,7 +132,7 @@ func (s *server) createTask(w http.ResponseWriter, r *http.Request) {
 		Priority int    `json:"priority"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&in); err != nil || in.Title == "" {
-		httpError(w, http.StatusBadRequest, "нужны user_id и title")
+		httpError(w, http.StatusBadRequest, "user_id and title are required")
 		return
 	}
 
@@ -140,7 +140,7 @@ func (s *server) createTask(w http.ResponseWriter, r *http.Request) {
 		Where(gen.User.ID.Eq(in.UserID)).
 		One(r.Context())
 	if errors.Is(err, sorm.ErrNotFound) {
-		httpError(w, http.StatusNotFound, "пользователь не найден")
+		httpError(w, http.StatusNotFound, "user not found")
 		return
 	}
 	if err != nil {
@@ -150,16 +150,16 @@ func (s *server) createTask(w http.ResponseWriter, r *http.Request) {
 
 	sess := sorm.NewSession(s.db)
 	t := &models.Task{User: owner, Title: in.Title, Priority: in.Priority, CreatedAt: time.Now()}
-	sorm.Add(sess, t) // FK проставится из навигации
+	sorm.Add(sess, t) // FK is filled in from navigation
 	if err := sess.SaveChanges(r.Context()); err != nil {
 		httpError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	t.User = nil // не раздуваем ответ
+	t.User = nil // keep the response small
 	writeJSON(w, http.StatusCreated, t)
 }
 
-// GET /tasks?done=false&min_priority=2 — динамическая композиция фильтров.
+// GET /tasks?done=false&min_priority=2 — dynamic filter composition.
 func (s *server) listTasks(w http.ResponseWriter, r *http.Request) {
 	t := gen.Task
 	q := sorm.Query[models.Task](s.db).OrderBy(t.Priority.Desc(), t.ID.Asc())
@@ -170,12 +170,12 @@ func (s *server) listTasks(w http.ResponseWriter, r *http.Request) {
 			httpError(w, http.StatusBadRequest, "done: true|false")
 			return
 		}
-		q = q.Where(t.Done.Eq(done)) // done=false — полноценное условие
+		q = q.Where(t.Done.Eq(done)) // done=false is a first-class condition
 	}
 	if v := r.URL.Query().Get("min_priority"); v != "" {
 		p, err := strconv.Atoi(v)
 		if err != nil {
-			httpError(w, http.StatusBadRequest, "min_priority: число")
+			httpError(w, http.StatusBadRequest, "min_priority: must be a number")
 			return
 		}
 		q = q.Where(t.Priority.Gte(p))
@@ -189,8 +189,8 @@ func (s *server) listTasks(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, tasks)
 }
 
-// POST /tasks/{id}/toggle — Unit of Work: Track → мутация → SaveChanges.
-// Конкурентное изменение (optimistic concurrency) → 409 Conflict.
+// POST /tasks/{id}/toggle — Unit of Work: Track → mutate → SaveChanges.
+// A concurrent modification (optimistic concurrency) → 409 Conflict.
 func (s *server) toggleTask(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil {
@@ -203,7 +203,7 @@ func (s *server) toggleTask(w http.ResponseWriter, r *http.Request) {
 		Where(gen.Task.ID.Eq(id)).
 		One(r.Context())
 	if errors.Is(err, sorm.ErrNotFound) {
-		httpError(w, http.StatusNotFound, "задача не найдена")
+		httpError(w, http.StatusNotFound, "task not found")
 		return
 	}
 	if err != nil {
@@ -211,11 +211,11 @@ func (s *server) toggleTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	task.Done = !task.Done // обычная мутация — дифф вычислит sorm
+	task.Done = !task.Done // a plain mutation — sorm computes the diff
 	err = sess.SaveChanges(r.Context())
 	var conflict *sorm.ConflictError
 	if errors.As(err, &conflict) {
-		httpError(w, http.StatusConflict, "задача изменена конкурентно, повторите")
+		httpError(w, http.StatusConflict, "task was modified concurrently, retry")
 		return
 	}
 	if err != nil {
