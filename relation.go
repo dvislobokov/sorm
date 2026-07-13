@@ -62,6 +62,7 @@ func (r HasMany[E, C]) exists(preds []Pred[C], not bool) Pred[E] {
 		fkCol:       r.fkCol,
 		parentTable: pm.Table,
 		parentPK:    pm.PK,
+		deletedCol:  cm.SoftDeleteCol,
 		preds:       nodesOf(preds),
 		not:         not,
 	})
@@ -181,6 +182,7 @@ func (r BelongsTo[C, P]) Is(preds ...Pred[P]) Pred[C] {
 		fkCol:       pm.PK,
 		parentTable: cm.Table,
 		parentPK:    r.fkCol,
+		deletedCol:  pm.SoftDeleteCol,
 		preds:       nodesOf(preds),
 	})
 }
@@ -266,6 +268,7 @@ func (r HasOne[E, C]) exists(preds []Pred[C], not bool) Pred[E] {
 		fkCol:       r.fkCol,
 		parentTable: pm.Table,
 		parentPK:    pm.PK,
+		deletedCol:  cm.SoftDeleteCol,
 		preds:       nodesOf(preds),
 		not:         not,
 	})

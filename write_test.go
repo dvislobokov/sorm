@@ -9,7 +9,7 @@ import (
 )
 
 func TestUpdateToSQL(t *testing.T) {
-	sql, args, err := sorm.Update[models.User](nil).
+	sql, args, err := sorm.Update[models.User](nil).WithDeleted().
 		Set(u.Active.Set(false), u.Name.Set("archived")). // Set(false) is a first-class assignment
 		Where(u.Age.Lt(18)).
 		ToSQL()
@@ -27,26 +27,26 @@ func TestUpdateToSQL(t *testing.T) {
 }
 
 func TestUpdateWithoutWhereGuard(t *testing.T) {
-	_, _, err := sorm.Update[models.User](nil).Set(u.Active.Set(true)).ToSQL()
+	_, _, err := sorm.Update[models.User](nil).WithDeleted().Set(u.Active.Set(true)).ToSQL()
 	if err == nil || !strings.Contains(err.Error(), "AllRows") {
 		t.Fatalf("expected a guard error, got %v", err)
 	}
 	// Explicit opt-in works.
-	sql, _, err := sorm.Update[models.User](nil).Set(u.Active.Set(true)).AllRows().ToSQL()
+	sql, _, err := sorm.Update[models.User](nil).WithDeleted().Set(u.Active.Set(true)).AllRows().ToSQL()
 	if err != nil || !strings.HasPrefix(sql, `UPDATE "users" SET`) {
 		t.Fatalf("AllRows: %v / %s", err, sql)
 	}
 }
 
 func TestUpdateWithoutSet(t *testing.T) {
-	_, _, err := sorm.Update[models.User](nil).Where(u.Age.Gt(1)).ToSQL()
+	_, _, err := sorm.Update[models.User](nil).WithDeleted().Where(u.Age.Gt(1)).ToSQL()
 	if err == nil {
 		t.Fatal("expected an error for update without Set")
 	}
 }
 
 func TestDeleteSQL(t *testing.T) {
-	sql, args, err := sorm.Delete[models.User](nil).Where(u.Active.Eq(false)).ToSQL()
+	sql, args, err := sorm.Delete[models.User](nil).Hard().Where(u.Active.Eq(false)).ToSQL()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -55,7 +55,7 @@ func TestDeleteSQL(t *testing.T) {
 		t.Errorf("got %s %v", sql, args)
 	}
 
-	_, _, err = sorm.Delete[models.User](nil).ToSQL()
+	_, _, err = sorm.Delete[models.User](nil).Hard().ToSQL()
 	if err == nil {
 		t.Fatal("expected a guard error for delete without Where")
 	}

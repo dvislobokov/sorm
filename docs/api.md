@@ -19,6 +19,8 @@ type QueryBuilder[E any] // immutable: every method returns a copy
     func (q) One(ctx) (*E, error)                      // ErrNotFound when none
     func (q) Count(ctx) (int64, error)
     func (q) Iter(ctx) iter.Seq2[*E, error]            // streaming; no With
+    func (q) WithDeleted() QueryBuilder[E]             // disable the soft-delete filter
+    func (q) OnlyDeleted() QueryBuilder[E]             // trash-bin view
     func (q) ForUpdate() QueryBuilder[E]               // SELECT ... FOR UPDATE (PG/MySQL)
     func (q) ForUpdateSkipLocked() QueryBuilder[E]     // + SKIP LOCKED (queue pattern)
     func (q) ToSQL() (string, []any)
@@ -72,6 +74,7 @@ func Update[E any](db DB) UpdateBuilder[E]
 
 func Delete[E any](db DB) DeleteBuilder[E]
     // Where · AllRows · Exec · ToSQL — same rules
+    // soft-delete entities: renders an UPDATE stamping the column; Hard() forces DELETE
 
 func Upsert[E any](db DB) UpsertBuilder[E]
     // Rows(es ...*E) · OnConflict(cols ...ColOf[E]) · DoUpdate(cols ...ColOf[E])
@@ -378,7 +381,7 @@ sorm migrate up   -dialect D -dir DIR -dsn DSN
 ## Struct tags
 
 See the full [tag reference](guide/02-schema.md#tag-reference):
-`pk` · `auto` · `unique` · `version` · `autoCreate` · `autoUpdate` ·
+`pk` · `auto` · `unique` · `version` · `autoCreate` · `autoUpdate` · `softDelete` ·
 `col:` · `type:` · `fk:` ·
 `index[:name]` · `uniqueIndex[:name]` · `table:` · `-` ·
 `hasMany:` · `belongsTo:` · `hasOne:` · `many2many:` · `json`

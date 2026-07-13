@@ -28,7 +28,7 @@ func TestSubquerySQL(t *testing.T) {
 	// Scalar subquery in a comparison.
 	minAge := sorm.PickScalar(sorm.Min[models.User](u.Age), sorm.Query[models.User](nil))
 	sql, _ = sorm.Query[models.User](nil).Where(sorm.GtQ(u.Age, minAge)).ToSQL()
-	if !strings.Contains(sql, `"age" > (SELECT min("age") FROM "users")`) {
+	if !strings.Contains(sql, `"age" > (SELECT min("age") FROM "users" WHERE "deleted_at" IS NULL)`) {
 		t.Fatalf("scalar sql: %s", sql)
 	}
 

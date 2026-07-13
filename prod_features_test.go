@@ -88,7 +88,8 @@ func TestBelongsToIsSQL(t *testing.T) {
 	p := gen.Post
 	assertPostSQL(t,
 		sorm.Query[models.Post](nil).Where(p.Author.Is(u.Active.Eq(true))),
-		`EXISTS (SELECT 1 FROM "users" WHERE "id" = "posts"."author_id" AND "active" = $1)`)
+		// The parent's soft-delete filter joins the correlated subquery.
+		`EXISTS (SELECT 1 FROM "users" WHERE "id" = "posts"."author_id" AND "deleted_at" IS NULL AND "active" = $1)`)
 }
 
 func assertPostSQL(t *testing.T, q sorm.QueryBuilder[models.Post], wantFragment string) {

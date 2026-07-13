@@ -391,6 +391,15 @@ func genEntity(s *parse.Schema, e parse.Entity) ([]byte, error) {
 	}
 	g.pf("\tPKValue: func(e *%s) any { return e.%s },\n", entT, e.PK().GoName)
 
+	// Soft delete: queries filter the column IS NULL; Remove/Delete stamp it.
+	for _, f := range e.Fields {
+		if f.SoftDelete {
+			g.pf("\tSoftDeleteCol: %q,\n", f.Col)
+			g.pf("\tSetDeleted: func(e *%s, t time.Time) { e.%s = &t },\n", entT, f.GoName)
+			break
+		}
+	}
+
 	// Auto-timestamps: autoCreate stamps zero fields on insert (a manual
 	// value wins), autoUpdate stamps unconditionally.
 	var creates, updates []string

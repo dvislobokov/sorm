@@ -73,6 +73,9 @@ type Field struct {
 	// every effective UPDATE.
 	AutoCreate bool
 	AutoUpdate bool
+	// SoftDelete — sorm:"softDelete" on a *time.Time: queries filter the
+	// column IS NULL, deletes become UPDATEs stamping it.
+	SoftDelete bool
 	FK       string // "User.ID" from the fk: tag, empty if absent
 	SQLType  string // column type override from the type: tag
 	// BasicKind — underlying type for the SQL mapping: "string","int64",...,
@@ -300,6 +303,15 @@ func parseEntity(name string, st *types.Struct, modelsPkg *types.Package, entity
 	if ent.PKIndex < 0 {
 		return nil, fmt.Errorf("no pk field")
 	}
+	softDeletes := 0
+	for _, f := range ent.Fields {
+		if f.SoftDelete {
+			softDeletes++
+		}
+	}
+	if softDeletes > 1 {
+		return nil, fmt.Errorf("multiple softDelete fields")
+	}
 	if err := collectIndexes(ent, st); err != nil {
 		return nil, err
 	}
@@ -479,6 +491,7 @@ func parseColumn(fv *types.Var, opts tagOpts, qual types.Qualifier, naming strin
 		Version:    opts.has("version"),
 		AutoCreate: opts.has("autoCreate"),
 		AutoUpdate: opts.has("autoUpdate"),
+		SoftDelete: opts.has("softDelete"),
 	}
 	if f.AutoCreate && f.AutoUpdate {
 		return nil, fmt.Errorf("autoCreate and autoUpdate on one field are redundant — autoUpdate already stamps on insert")
@@ -544,6 +557,12 @@ func parseColumn(fv *types.Var, opts tagOpts, qual types.Qualifier, naming strin
 	}
 	if (f.AutoCreate || f.AutoUpdate) && (!f.IsTime || f.Nullable) {
 		return nil, fmt.Errorf("autoCreate/autoUpdate requires a plain time.Time field")
+	}
+	if f.SoftDelete && (!f.IsTime || !f.Nullable) {
+		return nil, fmt.Errorf("softDelete requires a *time.Time field (NULL = alive)")
+	}
+	if f.SoftDelete && (f.PK || f.Version || f.AutoCreate || f.AutoUpdate) {
+		return nil, fmt.Errorf("softDelete cannot be combined with pk/version/auto-timestamps")
 	}
 	return f, nil
 }

@@ -37,6 +37,12 @@ type Meta[E any] struct {
 	// GetVersion/SetVersion — only when VersionCol != "".
 	GetVersion func(*E) int64
 	SetVersion func(*E, int64)
+	// SoftDeleteCol — the column of `sorm:"softDelete"` (a *time.Time);
+	// "" disables soft deletion. When set: queries filter the column
+	// IS NULL, session Remove and set-based Delete become UPDATEs.
+	SoftDeleteCol string
+	// SetDeleted stamps the soft-delete field (only when SoftDeleteCol != "").
+	SetDeleted func(*E, time.Time)
 	// TouchCreate/TouchUpdate — auto-timestamps (sorm:"autoCreate"/"autoUpdate").
 	// Nil when the entity has no such fields. TouchCreate stamps zero-valued
 	// autoCreate fields on INSERT (a manually set value wins); TouchUpdate

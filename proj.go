@@ -20,14 +20,16 @@ import (
 // From starts a projection query from the table of entity E.
 func From[E any](db DB) FromBuilder[E] {
 	m := metaFor[E]()
-	return FromBuilder[E]{db: db, d: dialectOf(db), schema: schemaOf(db), table: m.Table}
+	return FromBuilder[E]{db: db, d: dialectOf(db), schema: schemaOf(db), table: m.Table, sdCol: m.SoftDeleteCol}
 }
 
 type FromBuilder[E any] struct {
-	db     DB
-	d      dialect.Dialect
-	schema string
-	table  string
+	db      DB
+	d       dialect.Dialect
+	schema  string
+	table   string
+	sdCol   string
+	deleted int
 	name   string
 	joins  []joinClause
 	preds  []Pred[E]
@@ -42,6 +44,13 @@ type FromBuilder[E any] struct {
 // Named labels the projection for instrumentation (sorm.query.name).
 func (q FromBuilder[E]) Named(name string) FromBuilder[E] {
 	q.name = name
+	return q
+}
+
+// WithDeleted disables the ROOT table soft-delete filter. Joined tables
+// are not filtered implicitly — add explicit ON/WHERE predicates there.
+func (q FromBuilder[E]) WithDeleted() FromBuilder[E] {
+	q.deleted = 1
 	return q
 }
 
@@ -355,9 +364,13 @@ func buildProjection[E any](q FromBuilder[E], exprs []SelectExpr[E]) (string, []
 			}
 		}
 	}
-	if len(q.preds) > 0 {
+	whereNodes := nodesOf(q.preds)
+	if n, ok := softDeleteNode(q.table, q.sdCol, q.deleted); ok {
+		whereNodes = append(whereNodes, n)
+	}
+	if len(whereNodes) > 0 {
 		w.raw(" WHERE ")
-		logicalNode{"AND", nodesOf(q.preds)}.writeSQL(w)
+		logicalNode{"AND", whereNodes}.writeSQL(w)
 	}
 	if len(q.groups) > 0 {
 		w.raw(" GROUP BY ")

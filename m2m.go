@@ -87,7 +87,8 @@ func (r ManyToMany[E, C]) Any(preds ...Pred[C]) Pred[E] {
 		joinTable: r.joinTable, parentCol: r.parentCol, childCol: r.childCol,
 		parentTable: pm.Table, parentPK: pm.PK,
 		childTable: cm.Table, childPK: cm.PK,
-		preds: nodesOf(preds),
+		childDeleted: cm.SoftDeleteCol,
+		preds:        nodesOf(preds),
 	})
 }
 
@@ -207,6 +208,7 @@ type m2mExistsNode struct {
 	joinTable, parentCol, childCol string
 	parentTable, parentPK          string
 	childTable, childPK            string
+	childDeleted                   string // child soft-delete column ("" — none)
 	preds                          []node
 }
 
@@ -219,7 +221,11 @@ func (n m2mExistsNode) writeSQL(w *sqlWriter) {
 	w.table(n.parentTable)
 	w.raw(".")
 	w.ident(n.parentPK)
-	if len(n.preds) > 0 {
+	inner := n.preds
+	if sd, ok := softDeleteNode(n.childTable, n.childDeleted, 0); ok {
+		inner = append(append([]node{}, n.preds...), sd)
+	}
+	if len(inner) > 0 {
 		w.raw(" AND ")
 		w.col(colRef{n.joinTable, n.childCol})
 		w.raw(" IN (SELECT ")
@@ -227,7 +233,7 @@ func (n m2mExistsNode) writeSQL(w *sqlWriter) {
 		w.raw(" FROM ")
 		w.table(n.childTable)
 		w.raw(" WHERE ")
-		logicalNode{"AND", n.preds}.writeSQL(w)
+		logicalNode{"AND", inner}.writeSQL(w)
 		w.raw(")")
 	}
 	w.raw(")")

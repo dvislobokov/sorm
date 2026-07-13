@@ -46,6 +46,7 @@ Options are comma-separated inside one `sorm:"..."` tag.
 | `version` | optimistic-concurrency token; must be a plain `int64`. Initialized to 1 on insert, incremented on every update |
 | `autoCreate` | auto-timestamp; plain `time.Time`. Stamped on INSERT when zero — a manually set value wins |
 | `autoUpdate` | auto-timestamp; plain `time.Time`. Stamped on INSERT and on every effective UPDATE (a no-op flush does not touch it). All stamps in one `SaveChanges` share a single timestamp. Set-based `sorm.Update` does **not** stamp it — add the assignment explicitly |
+| `softDelete` | on a `*time.Time`: queries filter the column `IS NULL` automatically, `Remove`/`Delete` become UPDATEs stamping it. Escapes: `WithDeleted()`, `OnlyDeleted()`, `Delete().Hard()` |
 | `col:name` | override the column name (default: `snake_case` of the field name) |
 | `type:sqltype` | override the SQL column type, e.g. `type:text`, `type:varchar(36)` |
 | `fk:Entity.Field` | declares a foreign key to another entity's field (adds `REFERENCES` in DDL and an edge for write ordering) |

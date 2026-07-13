@@ -30,20 +30,20 @@ func assertSQL(t *testing.T, q sorm.QueryBuilder[models.User], wantSQL string, w
 }
 
 func TestSelectAll(t *testing.T) {
-	assertSQL(t, sorm.Query[models.User](nil),
+	assertSQL(t, sorm.Query[models.User](nil).WithDeleted(),
 		`SELECT `+allCols+` FROM "users"`)
 }
 
 func TestWhereZeroValues(t *testing.T) {
 	// The key anti-GORM test: false and 0 are first-class conditions.
 	assertSQL(t,
-		sorm.Query[models.User](nil).Where(u.Active.Eq(false), u.Age.Eq(0)),
+		sorm.Query[models.User](nil).WithDeleted().Where(u.Active.Eq(false), u.Age.Eq(0)),
 		`SELECT `+allCols+` FROM "users" WHERE ("active" = $1 AND "age" = $2)`,
 		false, 0)
 }
 
 func TestWhereComposition(t *testing.T) {
-	q := sorm.Query[models.User](nil).
+	q := sorm.Query[models.User](nil).WithDeleted().
 		Where(u.Active.Eq(true)).
 		Where(sorm.Or(u.Age.Gte(18), u.Name.HasPrefix("adm"))).
 		OrderBy(u.Name.Asc(), u.ID.Desc()).
@@ -57,7 +57,7 @@ func TestWhereComposition(t *testing.T) {
 }
 
 func TestBuilderImmutability(t *testing.T) {
-	base := sorm.Query[models.User](nil).Where(u.Active.Eq(true))
+	base := sorm.Query[models.User](nil).WithDeleted().Where(u.Active.Eq(true))
 	q1 := base.Where(u.Age.Gt(30))
 	q2 := base.Where(u.Name.Eq("bob")).Limit(1)
 
@@ -70,30 +70,30 @@ func TestBuilderImmutability(t *testing.T) {
 }
 
 func TestInEmpty(t *testing.T) {
-	assertSQL(t, sorm.Query[models.User](nil).Where(u.Age.In()),
+	assertSQL(t, sorm.Query[models.User](nil).WithDeleted().Where(u.Age.In()),
 		`SELECT `+allCols+` FROM "users" WHERE FALSE`)
-	assertSQL(t, sorm.Query[models.User](nil).Where(u.Age.NotIn()),
+	assertSQL(t, sorm.Query[models.User](nil).WithDeleted().Where(u.Age.NotIn()),
 		`SELECT `+allCols+` FROM "users" WHERE TRUE`)
 }
 
 func TestIn(t *testing.T) {
-	assertSQL(t, sorm.Query[models.User](nil).Where(u.ID.In(1, 2, 3)),
+	assertSQL(t, sorm.Query[models.User](nil).WithDeleted().Where(u.ID.In(1, 2, 3)),
 		`SELECT `+allCols+` FROM "users" WHERE "id" IN ($1, $2, $3)`,
 		int64(1), int64(2), int64(3))
 }
 
 func TestLikeEscaping(t *testing.T) {
 	// A literal with % and _ is escaped; a user-provided Like is not.
-	assertSQL(t, sorm.Query[models.User](nil).Where(u.Name.Contains("50%_off")),
+	assertSQL(t, sorm.Query[models.User](nil).WithDeleted().Where(u.Name.Contains("50%_off")),
 		`SELECT `+allCols+` FROM "users" WHERE "name" LIKE $1`,
 		`%50\%\_off%`)
-	assertSQL(t, sorm.Query[models.User](nil).Where(u.Name.Like("50%")),
+	assertSQL(t, sorm.Query[models.User](nil).WithDeleted().Where(u.Name.Like("50%")),
 		`SELECT `+allCols+` FROM "users" WHERE "name" LIKE $1`,
 		"50%")
 }
 
 func TestBetweenAndNull(t *testing.T) {
-	assertSQL(t, sorm.Query[models.User](nil).Where(u.Age.Between(18, 65), u.Nickname.IsNotNull()),
+	assertSQL(t, sorm.Query[models.User](nil).WithDeleted().Where(u.Age.Between(18, 65), u.Nickname.IsNotNull()),
 		`SELECT `+allCols+` FROM "users" WHERE ("age" BETWEEN $1 AND $2 AND "nickname" IS NOT NULL)`,
 		18, 65)
 }
@@ -102,7 +102,7 @@ func TestAnyExists(t *testing.T) {
 	// Filtering parents by children — something Bun cannot do (issue #604).
 	p := gen.Post
 	assertSQL(t,
-		sorm.Query[models.User](nil).Where(u.Active.Eq(true), u.Posts.Any(p.Title.HasPrefix("Go"))),
+		sorm.Query[models.User](nil).WithDeleted().Where(u.Active.Eq(true), u.Posts.Any(p.Title.HasPrefix("Go"))),
 		`SELECT `+allCols+` FROM "users" WHERE ("active" = $1 AND `+
 			`EXISTS (SELECT 1 FROM "posts" WHERE "author_id" = "users"."id" AND "title" LIKE $2))`,
 		true, "Go%")
@@ -110,12 +110,12 @@ func TestAnyExists(t *testing.T) {
 
 func TestNoneNotExists(t *testing.T) {
 	assertSQL(t,
-		sorm.Query[models.User](nil).Where(u.Posts.None()),
+		sorm.Query[models.User](nil).WithDeleted().Where(u.Posts.None()),
 		`SELECT `+allCols+` FROM "users" WHERE NOT EXISTS (SELECT 1 FROM "posts" WHERE "author_id" = "users"."id")`)
 }
 
 func TestWithImmutability(t *testing.T) {
-	base := sorm.Query[models.User](nil)
+	base := sorm.Query[models.User](nil).WithDeleted()
 	_ = base.With(u.Posts.Include())
 	// With must not leak into the base builder (the parent SQL is the same,
 	// but we verify the chain doesn't panic and the builder is copied).
@@ -123,6 +123,6 @@ func TestWithImmutability(t *testing.T) {
 }
 
 func TestNot(t *testing.T) {
-	assertSQL(t, sorm.Query[models.User](nil).Where(sorm.Not(u.Active.Eq(true))),
+	assertSQL(t, sorm.Query[models.User](nil).WithDeleted().Where(sorm.Not(u.Active.Eq(true))),
 		`SELECT `+allCols+` FROM "users" WHERE NOT ("active" = $1)`, true)
 }

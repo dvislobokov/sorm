@@ -49,7 +49,7 @@ type User struct {
 	Balance   float64
 	Avatar    []byte
 	CreatedAt time.Time
-	DeletedAt *time.Time
+	DeletedAt *time.Time `sorm:"softDelete"`
 	Version   int64    `sorm:"version"`
 	Posts     []*Post  `sorm:"hasMany:AuthorID"`
 	Tags      []*Tag   `sorm:"many2many:user_tags"`

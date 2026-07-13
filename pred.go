@@ -156,8 +156,11 @@ type existsNode struct {
 	fkCol       string
 	parentTable string
 	parentPK    string
-	preds       []node
-	not         bool
+	// deletedCol — soft-delete column of the INNER table; the subquery
+	// sees alive rows only ("" — no filtering).
+	deletedCol string
+	preds      []node
+	not        bool
 }
 
 func (n existsNode) writeSQL(w *sqlWriter) {
@@ -172,6 +175,11 @@ func (n existsNode) writeSQL(w *sqlWriter) {
 	w.table(n.parentTable)
 	w.raw(".")
 	w.ident(n.parentPK)
+	if n.deletedCol != "" {
+		w.raw(" AND ")
+		w.col(colRef{n.childTable, n.deletedCol})
+		w.raw(" IS NULL")
+	}
 	for _, p := range n.preds {
 		w.raw(" AND ")
 		p.writeSQL(w)

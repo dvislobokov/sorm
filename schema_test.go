@@ -51,7 +51,7 @@ func TestInSchemaSQL(t *testing.T) {
 		t.Fatalf("update: %s (err=%v)", sql, err)
 	}
 
-	sql, _, err = sorm.Delete[models.User](db).AllRows().ToSQL()
+	sql, _, err = sorm.Delete[models.User](db).Hard().AllRows().ToSQL()
 	if err != nil || !strings.Contains(sql, `DELETE FROM "billing"."users"`) {
 		t.Fatalf("delete: %s (err=%v)", sql, err)
 	}

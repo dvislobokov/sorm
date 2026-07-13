@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"time"
 
 	"github.com/dvislobokov/sorm/dialect"
 )
@@ -27,6 +28,7 @@ type UpdateBuilder[E any] struct {
 	schema  string
 	assigns []Assign[E]
 	preds   []Pred[E]
+	deleted int
 	name    string
 	allRows bool
 }
@@ -50,6 +52,12 @@ func (q UpdateBuilder[E]) Where(ps ...Pred[E]) UpdateBuilder[E] {
 // AllRows explicitly allows an UPDATE over the whole table.
 func (q UpdateBuilder[E]) AllRows() UpdateBuilder[E] {
 	q.allRows = true
+	return q
+}
+
+// WithDeleted lets the UPDATE touch soft-deleted rows too.
+func (q UpdateBuilder[E]) WithDeleted() UpdateBuilder[E] {
+	q.deleted = 1
 	return q
 }
 
@@ -79,9 +87,13 @@ func (q UpdateBuilder[E]) ToSQL() (string, []any, error) {
 		w.ident(q.meta.VersionCol)
 		w.raw(" + 1")
 	}
-	if len(q.preds) > 0 {
+	nodes := nodesOf(q.preds)
+	if n, ok := softDeleteNode(q.meta.Table, q.meta.SoftDeleteCol, q.deleted); ok {
+		nodes = append(nodes, n)
+	}
+	if len(nodes) > 0 {
 		w.raw(" WHERE ")
-		logicalNode{"AND", nodesOf(q.preds)}.writeSQL(w)
+		logicalNode{"AND", nodes}.writeSQL(w)
 	}
 	return w.sb.String(), w.args, w.err
 }
@@ -112,6 +124,14 @@ type DeleteBuilder[E any] struct {
 	preds   []Pred[E]
 	name    string
 	allRows bool
+	hard    bool
+}
+
+// Hard forces a real DELETE for soft-delete entities: the rows are gone,
+// including already soft-deleted ones matching the predicates (purge).
+func (q DeleteBuilder[E]) Hard() DeleteBuilder[E] {
+	q.hard = true
+	return q
 }
 
 // Named labels the statement for instrumentation (sorm.query.name).
@@ -135,6 +155,31 @@ func (q DeleteBuilder[E]) ToSQL() (string, []any, error) {
 		return "", nil, errors.New("sorm: delete without Where — use AllRows() to delete the whole table")
 	}
 	w := newSchemaSQLWriter(q.d, q.schema)
+
+	// Soft-delete entities: DELETE becomes an UPDATE stamping the column
+	// (alive rows only); Hard() forces a real DELETE.
+	if sd := q.meta.SoftDeleteCol; sd != "" && !q.hard {
+		w.raw("UPDATE ")
+		w.table(q.meta.Table)
+		w.raw(" SET ")
+		w.ident(sd)
+		w.raw(" = ")
+		w.arg(time.Now())
+		if v := q.meta.VersionCol; v != "" {
+			w.raw(", ")
+			w.ident(v)
+			w.raw(" = ")
+			w.ident(v)
+			w.raw(" + 1")
+		}
+		nodes := nodesOf(q.preds)
+		alive, _ := softDeleteNode(q.meta.Table, sd, 0)
+		nodes = append(nodes, alive)
+		w.raw(" WHERE ")
+		logicalNode{"AND", nodes}.writeSQL(w)
+		return w.sb.String(), w.args, w.err
+	}
+
 	w.raw("DELETE FROM ")
 	w.table(q.meta.Table)
 	if len(q.preds) > 0 {

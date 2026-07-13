@@ -114,6 +114,33 @@ Safety rails:
 - On versioned entities, set-based updates automatically bump the
   `version` column, so open sessions still detect the conflict.
 
+## Soft delete
+
+Tag a `*time.Time` field with `sorm:"softDelete"` and deletion becomes
+logical across the whole API:
+
+```go
+type User struct {
+    ...
+    DeletedAt *time.Time `sorm:"softDelete"`
+}
+```
+
+- **Reads filter automatically**: every query, `Find`, Include loads and
+  relation predicates (`Any`/`None`/`Is` — the correlated subquery skips
+  deleted rows of the inner table) see alive rows only. Projections
+  filter the root table (joined tables need explicit predicates).
+- **Deletes become UPDATEs**: session `Remove` and set-based `Delete`
+  stamp the column (bumping `version` on concurrency-enabled entities);
+  the in-memory entity gets its field set after `SaveChanges`.
+- **Escapes**: `WithDeleted()` sees everything, `OnlyDeleted()` — the
+  trash bin, `Delete().Hard()` — a real DELETE (purge), restore = a
+  `WithDeleted()` update with `SetNull()` on the column.
+
+Caveat: unique constraints still see soft-deleted rows (a deleted user
+blocks re-registration of the same email) — use a partial unique index
+(`Indexes()` with `Where: "deleted_at IS NULL"`) when that matters.
+
 ## Subqueries
 
 `SubQ[V]` is a typed subquery: an int64 subquery cannot meet a string

@@ -27,14 +27,14 @@ func (r Messages) Post(ctx context.Context, msg *models.Message) error {
 
 // Page returns a room page newest-first with authors and threaded
 // replies eagerly loaded; the (room_id, created_at) composite index
-// backs the scan. Soft-deleted messages are filtered out.
+// backs the scan. Soft-deleted messages are filtered out implicitly
+// (the softDelete tag on Message.DeletedAt).
 func (r Messages) Page(ctx context.Context, roomID int64, before time.Time, limit int) ([]*models.Message, error) {
 	m := gen.Message
 	return sorm.Query[models.Message](r.db).
 		Where(
 			m.RoomID.Eq(roomID),
 			m.CreatedAt.Lt(before),
-			m.DeletedAt.IsNull(),
 		).
 		With(
 			m.Author.Include(),
@@ -47,11 +47,12 @@ func (r Messages) Page(ctx context.Context, roomID int64, before time.Time, limi
 }
 
 // Edit — tracked read + mutate; a concurrent edit surfaces as
-// *sorm.ConflictError thanks to the version column.
+// *sorm.ConflictError thanks to the version column. Deleted messages are
+// invisible here automatically.
 func (r Messages) Edit(ctx context.Context, id int64, text string) (*models.Message, error) {
 	s := sorm.NewSession(r.db)
 	msg, err := sorm.Track[models.Message](s).
-		Where(gen.Message.ID.Eq(id), gen.Message.DeletedAt.IsNull()).
+		Where(gen.Message.ID.Eq(id)).
 		One(ctx)
 	if err != nil {
 		return nil, err
@@ -60,12 +61,11 @@ func (r Messages) Edit(ctx context.Context, id int64, text string) (*models.Mess
 	return msg, s.SaveChanges(ctx)
 }
 
-// SoftDelete — set-based UPDATE: no SELECT roundtrip.
-func (r Messages) SoftDelete(ctx context.Context, id int64, at time.Time) (int64, error) {
-	m := gen.Message
-	return sorm.Update[models.Message](r.db).
-		Set(m.DeletedAt.Set(at)).
-		Where(m.ID.Eq(id), m.DeletedAt.IsNull()).
+// SoftDelete — set-based Delete: the softDelete tag turns it into an
+// UPDATE stamping deleted_at (alive rows only), no SELECT roundtrip.
+func (r Messages) SoftDelete(ctx context.Context, id int64, _ time.Time) (int64, error) {
+	return sorm.Delete[models.Message](r.db).
+		Where(gen.Message.ID.Eq(id)).
 		Named("messages.soft-delete").
 		Exec(ctx)
 }
@@ -82,7 +82,7 @@ func (r Messages) Stats(ctx context.Context, roomID int64) (*RoomStat, error) {
 	m := gen.Message
 	return sorm.Project[RoomStat](
 		sorm.From[models.Message](r.db).
-			Where(m.RoomID.Eq(roomID), m.DeletedAt.IsNull()).
+			Where(m.RoomID.Eq(roomID)).
 			GroupBy(m.RoomID),
 		sorm.Field(m.RoomID),
 		sorm.As(sorm.CountAll[models.Message](), "n"),

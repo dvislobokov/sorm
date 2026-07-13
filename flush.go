@@ -329,17 +329,45 @@ func (t *tracker[E]) buildPlan(p *flushPlan) error {
 func (t *tracker[E]) planDelete(p *flushPlan, e *E, pk any) {
 	m := t.meta
 	versioned := m.VersionCol != ""
-	sql := "DELETE FROM " + qualifiedTable(p.d, p.schema, m.Table) + " WHERE " + p.d.QuoteIdent(m.PK) + " = " + p.d.Placeholder(1)
-	args := []any{pk}
-	if versioned {
-		sql += " AND " + p.d.QuoteIdent(m.VersionCol) + " = " + p.d.Placeholder(2)
-		args = append(args, m.GetVersion(e))
+
+	var sql string
+	var args []any
+	if sd := m.SoftDeleteCol; sd != "" {
+		// Soft delete: an UPDATE stamping the column, with the same
+		// optimistic-concurrency predicate a hard delete would carry.
+		sql = "UPDATE " + qualifiedTable(p.d, p.schema, m.Table) + " SET " +
+			p.d.QuoteIdent(sd) + " = " + p.d.Placeholder(1)
+		args = []any{p.now}
+		if versioned {
+			sql += ", " + p.d.QuoteIdent(m.VersionCol) + " = " + p.d.QuoteIdent(m.VersionCol) + " + 1"
+		}
+		args = append(args, pk)
+		sql += " WHERE " + p.d.QuoteIdent(m.PK) + " = " + p.d.Placeholder(len(args))
+		if versioned {
+			args = append(args, m.GetVersion(e))
+			sql += " AND " + p.d.QuoteIdent(m.VersionCol) + " = " + p.d.Placeholder(len(args))
+		}
+		// Only alive rows: soft-deleting twice must not re-stamp.
+		sql += " AND " + p.d.QuoteIdent(sd) + " IS NULL"
+	} else {
+		sql = "DELETE FROM " + qualifiedTable(p.d, p.schema, m.Table) + " WHERE " + p.d.QuoteIdent(m.PK) + " = " + p.d.Placeholder(1)
+		args = []any{pk}
+		if versioned {
+			sql += " AND " + p.d.QuoteIdent(m.VersionCol) + " = " + p.d.Placeholder(2)
+			args = append(args, m.GetVersion(e))
+		}
 	}
 	p.deletes = append(p.deletes, planStmt{
 		table: m.Table,
 		item:  BatchItem{SQL: sql, Args: args, Check: expectOneRow(m.Table, pk)},
 	})
 	p.post = append(p.post, func() {
+		if m.SetDeleted != nil {
+			m.SetDeleted(e, p.now)
+			if versioned {
+				m.SetVersion(e, m.GetVersion(e)+1)
+			}
+		}
 		delete(t.byPK, pk)
 		delete(t.removed, e)
 	})

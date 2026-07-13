@@ -41,6 +41,21 @@ type QueryBuilder[E any] struct {
 	limit    *int
 	offset   *int
 	lock     string // "" | "FOR UPDATE" | "FOR UPDATE SKIP LOCKED"
+	// deleted: 0 = alive only (soft-delete filter), 1 = all, 2 = deleted only.
+	deleted int
+}
+
+// WithDeleted disables the soft-delete filter: the query sees every row,
+// deleted or not. No-op for entities without a softDelete field.
+func (q QueryBuilder[E]) WithDeleted() QueryBuilder[E] {
+	q.deleted = 1
+	return q
+}
+
+// OnlyDeleted returns exclusively soft-deleted rows (a trash-bin view).
+func (q QueryBuilder[E]) OnlyDeleted() QueryBuilder[E] {
+	q.deleted = 2
+	return q
 }
 
 // ForUpdate locks the selected rows until the transaction ends
@@ -246,9 +261,13 @@ func (q QueryBuilder[E]) writeSelect(w *sqlWriter, selectList string) {
 	w.raw("SELECT " + selectList + " FROM ")
 	w.table(q.meta.Table)
 
-	if len(q.preds) > 0 {
+	nodes := nodesOf(q.preds)
+	if n, ok := softDeleteNode(q.meta.Table, q.meta.SoftDeleteCol, q.deleted); ok {
+		nodes = append(nodes, n)
+	}
+	if len(nodes) > 0 {
 		w.raw(" WHERE ")
-		logicalNode{"AND", nodesOf(q.preds)}.writeSQL(w)
+		logicalNode{"AND", nodes}.writeSQL(w)
 	}
 	if len(q.orders) > 0 {
 		w.raw(" ORDER BY ")
@@ -275,6 +294,15 @@ func (q QueryBuilder[E]) writeSelect(w *sqlWriter, selectList string) {
 		}
 		w.raw(" " + q.lock)
 	}
+}
+
+// softDeleteNode builds the implicit soft-delete predicate for the given
+// mode (0 alive / 1 all / 2 deleted only); ok=false when nothing applies.
+func softDeleteNode(table, col string, mode int) (node, bool) {
+	if col == "" || mode == 1 {
+		return nil, false
+	}
+	return nullNode{colRef{table, col}, mode == 2}, true
 }
 
 func selectColumns(d dialect.Dialect, cols []string) string {

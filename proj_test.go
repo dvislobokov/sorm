@@ -18,7 +18,7 @@ type ageStatP struct {
 
 func TestProjectGroupByToSQL(t *testing.T) {
 	q := sorm.Project[ageStatP](
-		sorm.From[models.User](nil).
+		sorm.From[models.User](nil).WithDeleted().
 			Where(u.Active.Eq(true)).
 			GroupBy(u.Age).
 			Having(sorm.CountAll[models.User]().Gt(10)).
@@ -47,7 +47,7 @@ func TestProjectJoinToSQL(t *testing.T) {
 	}
 	p := gen.Post
 	q := sorm.Project[row](
-		sorm.From[models.User](nil).
+		sorm.From[models.User](nil).WithDeleted().
 			Join(u.Posts.LeftJoin()).
 			GroupBy(u.Name),
 		sorm.Field(u.Name),
@@ -71,7 +71,7 @@ func TestProjectArbitraryJoin(t *testing.T) {
 	}
 	p := gen.Post
 	q := sorm.Project[row](
-		sorm.From[models.User](nil).
+		sorm.From[models.User](nil).WithDeleted().
 			Join(sorm.InnerJoinOn(sorm.ColEq(p.ID, u.ID))), // value types match — compiles
 		sorm.Field(u.Email),
 		sorm.FieldOf[models.User](p.Title), // column of the joined entity
@@ -87,7 +87,7 @@ func TestProjectArbitraryJoin(t *testing.T) {
 
 func TestAggregateInWhereRejected(t *testing.T) {
 	q := sorm.Project[ageStatP](
-		sorm.From[models.User](nil).
+		sorm.From[models.User](nil).WithDeleted().
 			Where(sorm.CountAll[models.User]().Gt(1)), // aggregate in Where is an error
 		sorm.Field(u.Age),
 		sorm.As(sorm.CountAll[models.User](), "n"),
@@ -104,7 +104,7 @@ func TestProjectStrictMapping(t *testing.T) {
 		Bogus string // no matching expression
 	}
 	q := sorm.Project[wrong](
-		sorm.From[models.User](nil).GroupBy(u.Age),
+		sorm.From[models.User](nil).WithDeleted().GroupBy(u.Age),
 		sorm.Field(u.Age),
 	)
 	_, _, err := q.ToSQL()
