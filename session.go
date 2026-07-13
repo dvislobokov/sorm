@@ -18,7 +18,9 @@ type Session struct {
 }
 
 func NewSession(db DB) *Session {
-	return &Session{db: db, stores: map[reflect.Type]anyStore{}}
+	// A unit of work lives on the primary: tracked snapshots from a
+	// lagging replica would yield stale diffs (see WithReplicas).
+	return &Session{db: Primary(db), stores: map[reflect.Type]anyStore{}}
 }
 
 // DB returns the connection or transaction the session runs on.

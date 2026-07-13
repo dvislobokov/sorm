@@ -123,7 +123,11 @@ func (q QueryBuilder[E]) All(ctx context.Context) ([]*E, error) {
 	if err != nil {
 		return nil, err
 	}
-	rows, err := q.db.Query(ctx, sqlStr, args...)
+	db := q.db
+	if q.lock != "" {
+		db = Primary(db) // row locks are meaningless on a replica
+	}
+	rows, err := db.Query(ctx, sqlStr, args...)
 	if err != nil {
 		return nil, fmt.Errorf("sorm: select %s: %w", q.meta.Table, err)
 	}
@@ -189,7 +193,11 @@ func (q QueryBuilder[E]) Iter(ctx context.Context) iter.Seq2[*E, error] {
 			yield(nil, err)
 			return
 		}
-		rows, err := q.db.Query(ctx, sqlStr, args...)
+		db := q.db
+		if q.lock != "" {
+			db = Primary(db)
+		}
+		rows, err := db.Query(ctx, sqlStr, args...)
 		if err != nil {
 			yield(nil, fmt.Errorf("sorm: select %s: %w", q.meta.Table, err))
 			return

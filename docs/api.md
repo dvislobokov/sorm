@@ -138,6 +138,16 @@ type AfterLoader interface { AfterLoad(ctx) error }             // per materiali
 // set-based Update/Delete/Upsert bypass hooks
 ```
 
+### Read/write splitting
+
+```go
+func WithReplicas(primary DB, replicas ...DB) DB
+// untracked reads → replicas round-robin; writes, transactions, sessions
+// and locked reads → primary
+func Primary(db DB) DB   // pin the write node (no-op on plain connections)
+func Replica(db DB) DB   // pin a read replica
+```
+
 ### Schemas
 
 ```go

@@ -34,6 +34,11 @@ type schemaDB struct {
 
 func (s schemaDB) Schema() string { return s.schema }
 
+// Primary/Replica compose with WithReplicas: routing happens inside,
+// the schema stays on the outside.
+func (s schemaDB) Primary() DB { return schemaDB{DB: Primary(s.DB), schema: s.schema} }
+func (s schemaDB) Replica() DB { return schemaDB{DB: Replica(s.DB), schema: s.schema} }
+
 // Begin wraps the transaction so the schema survives RunInTx and sessions.
 func (s schemaDB) Begin(ctx context.Context) (Tx, error) {
 	tx, err := s.DB.Begin(ctx)

@@ -22,6 +22,30 @@ never rewritten. For migrations pass `migrate.WithSchema("billing")` to
 `Apply`/`Plan`; versioned `Up`/`Down` apply files on the connection as-is —
 point the DSN at the schema (`search_path` / database name).
 
+## Read/write splitting
+
+`sorm.WithReplicas` routes untracked reads to replicas (round-robin) and
+everything else to the primary:
+
+```go
+db := sorm.WithReplicas(pgxd.Wrap(primary),
+    pgxd.Wrap(replica1), pgxd.Wrap(replica2))
+```
+
+| Operation | Node |
+|---|---|
+| untracked `Query`/`Project`/`Raw` reads | next replica |
+| `Exec`, `ExecBatch`, `Upsert`, set-based `Update`/`Delete` | primary |
+| `Begin` / `RunInTx` | primary |
+| sessions & generated Contexts | primary entirely (read-your-writes: a tracked snapshot from a lagging replica means stale diffs and false version conflicts) |
+| `ForUpdate` / `ForUpdateSkipLocked` | primary (locks on replicas are meaningless) |
+
+Explicit pins for the exceptions: `sorm.Primary(db)` / `sorm.Replica(db)`
+(no-ops on plain connections). Composes with the other wrappers —
+recommended order: instrumentation outside, `InSchema` in the middle,
+the resolver inside. Health checks and failover belong to the pool or
+proxy (pgbouncer, RDS Proxy) — the resolver only routes.
+
 ## Adapters
 
 ### PostgreSQL — `sorm/driver/pgxd`
