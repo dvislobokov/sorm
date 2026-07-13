@@ -394,3 +394,13 @@ See the full [tag reference](guide/02-schema.md#tag-reference):
 `col:` · `type:` · `fk:` ·
 `index[:name]` · `uniqueIndex[:name]` · `table:` · `-` ·
 `hasMany:` · `belongsTo:` · `hasOne:` · `many2many:` · `json`
+
+## Package `sormtest` — testing toolkit
+
+```go
+func NewSQLite(t testing.TB) sorm.DB      // in-memory DB with the registered schema
+func NewPostgres(t testing.TB) sorm.DB    // isolated sormtest_<rand> schema in SORM_TEST_DSN
+func Load(t testing.TB, db sorm.DB, paths ...string) // YAML fixtures, FK-ordered
+func AssertSQL(t testing.TB, q any, wantSQL string, wantArgs ...any)
+func CountQueries(db sorm.DB) (sorm.DB, *Counter)    // Selects/Writes/Total/Reset
+```

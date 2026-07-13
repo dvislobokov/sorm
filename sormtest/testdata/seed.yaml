@@ -1,0 +1,12 @@
+# posts references users — the loader must insert users first even though
+# posts comes first in the file.
+posts:
+  - {id: 1, author_id: 1, title: hello, body: "", views: 3,
+     created_at: 2026-01-01T00:00:00Z, updated_at: 2026-01-01T00:00:00Z}
+  - {id: 2, author_id: 1, title: draft, body: "", views: 0,
+     created_at: 2026-01-02T00:00:00Z, updated_at: 2026-01-02T00:00:00Z}
+users:
+  - {id: 1, email: alice@a.b, name: Alice, active: true, age: 30, balance: 0,
+     created_at: 2026-01-01T00:00:00Z, version: 1}
+profiles:
+  - {id: 1, user_id: 1, bio: hi, prefs: {theme: dark, limit: 5, beta: true, notify: {email: true, chan: x}}}
