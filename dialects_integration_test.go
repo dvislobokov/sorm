@@ -10,11 +10,13 @@ import (
 	"time"
 
 	_ "github.com/go-sql-driver/mysql"
+	"github.com/jackc/pgx/v5/pgxpool"
 	_ "modernc.org/sqlite"
 
 	"github.com/dvislobokov/sorm"
 	"github.com/dvislobokov/sorm/dialect/lite"
 	"github.com/dvislobokov/sorm/dialect/my"
+	"github.com/dvislobokov/sorm/driver/pgxd"
 	"github.com/dvislobokov/sorm/driver/sqld"
 	"github.com/dvislobokov/sorm/internal/ddl"
 	"github.com/dvislobokov/sorm/internal/parse"
@@ -102,8 +104,72 @@ func mysqlDB(t *testing.T) sorm.DB {
 	return sqld.Wrap(sdb, my.Dialect{})
 }
 
-func TestSQLiteFullScenario(t *testing.T) { runDialectScenario(t, sqliteDB(t)) }
-func TestMySQLFullScenario(t *testing.T)  { runDialectScenario(t, mysqlDB(t)) }
+// mariaDB — MariaDB runs through the same mysql dialect and adapter;
+// the tests certify that the whole scenario behaves identically.
+func mariaDB(t *testing.T) sorm.DB {
+	t.Helper()
+	dsn := os.Getenv("SORM_TEST_MARIADB_DSN") // e.g.: root:root@tcp(localhost:13307)/sorm_test?parseTime=true
+	if dsn == "" {
+		t.Skip("SORM_TEST_MARIADB_DSN not set — MariaDB tests skipped")
+	}
+	sdb, err := sql.Open("mysql", dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { sdb.Close() })
+
+	stmts := append([]string{
+		`DROP TABLE IF EXISTS comments`,
+		`DROP TABLE IF EXISTS devices`,
+		`DROP TABLE IF EXISTS profiles`,
+		`DROP TABLE IF EXISTS user_tags`,
+		`DROP TABLE IF EXISTS tags`,
+		`DROP TABLE IF EXISTS api_keys`,
+		`DROP TABLE IF EXISTS posts`,
+		`DROP TABLE IF EXISTS users`,
+	}, generatedDDL(t, "mysql")...)
+	for _, s := range stmts {
+		if _, err := sdb.Exec(s); err != nil {
+			t.Fatalf("%v\n%s", err, s)
+		}
+	}
+	return sqld.Wrap(sdb, my.Dialect{})
+}
+
+// crdbDB — CockroachDB speaks the PG wire protocol: pgxd + the postgres
+// dialect as-is. The scenario certifies RETURNING, batches and 40001
+// retry classification.
+func crdbDB(t *testing.T) sorm.DB {
+	t.Helper()
+	dsn := os.Getenv("SORM_TEST_CRDB_DSN") // e.g.: postgres://root@localhost:26257/sorm_test?sslmode=disable
+	if dsn == "" {
+		t.Skip("SORM_TEST_CRDB_DSN not set — CockroachDB tests skipped")
+	}
+	pgPool, err := pgxpool.New(context.Background(), dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(pgPool.Close)
+	pool := pgxd.Wrap(pgPool)
+
+	drops := []string{
+		`DROP TABLE IF EXISTS comments`, `DROP TABLE IF EXISTS devices`,
+		`DROP TABLE IF EXISTS profiles`, `DROP TABLE IF EXISTS user_tags`,
+		`DROP TABLE IF EXISTS tags`, `DROP TABLE IF EXISTS api_keys`,
+		`DROP TABLE IF EXISTS posts`, `DROP TABLE IF EXISTS users`,
+	}
+	for _, s := range append(drops, generatedDDL(t, "postgres")...) {
+		if _, err := pool.Exec(context.Background(), s); err != nil {
+			t.Fatalf("%v\n%s", err, s)
+		}
+	}
+	return pool
+}
+
+func TestSQLiteFullScenario(t *testing.T)  { runDialectScenario(t, sqliteDB(t)) }
+func TestMySQLFullScenario(t *testing.T)   { runDialectScenario(t, mysqlDB(t)) }
+func TestMariaDBFullScenario(t *testing.T) { runDialectScenario(t, mariaDB(t)) }
+func TestCRDBFullScenario(t *testing.T)    { runDialectScenario(t, crdbDB(t)) }
 
 // runDialectScenario — end-to-end scenario: graph via session, Include,
 // partial UPDATE with versioning, conflict, EXISTS, set-based, projection, delete.

@@ -114,6 +114,16 @@ func diff(ctx context.Context, db *sql.DB, dialect string, opts []Option) (atlas
 	if err != nil {
 		return nil, nil, fmt.Errorf("github.com/dvislobokov/sorm/migrate: diff: %w", err)
 	}
+	// sorm manages tables only: schema-level changes (comments, attrs the
+	// engine reports — CockroachDB annotates "public") are not ours to touch.
+	kept := changes[:0]
+	for _, ch := range changes {
+		if _, isSchema := ch.(*schema.ModifySchema); isSchema {
+			continue
+		}
+		kept = append(kept, ch)
+	}
+	changes = kept
 	return drv, changes, nil
 }
 

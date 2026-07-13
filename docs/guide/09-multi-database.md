@@ -1,7 +1,22 @@
 # Multiple databases
 
-One code path, three databases. The core never imports a driver — it
+One code path, five databases. The core never imports a driver — it
 talks to `sorm.DB`, and adapters translate.
+
+## Supported databases
+
+| Database | Adapter / dialect | Runtime | Declarative migrations | Notes |
+|---|---|---|---|---|
+| PostgreSQL 13+ | `pgxd` / `pg` | ✅ | ✅ | reference platform |
+| MySQL 8+ | `sqld` / `my` | ✅ | ✅ | |
+| SQLite | `sqld` / `lite` | ✅ | ✅ | no row locks, no arrays |
+| MariaDB 10.6–10.11 | `sqld` / `my` | ✅ | ✅ | same mysql dialect, CI-certified |
+| MariaDB 11 | `sqld` / `my` | ✅ | ⚠️ versioned only | the pinned Atlas inspection does not see MariaDB 11 tables — `Up`/`Down` (plain SQL files) work, `Apply`/`Plan` do not |
+| CockroachDB 24+ | `pgxd` / `pg` | ✅ | ✅ | no advisory locks — migrations serialize through a `sorm_migration_lock` lease row automatically; known quirk: custom DESC indexes re-plan on every diff (harmless) |
+
+CockroachDB pairs especially well with `RunInTx`: the engine leans on
+serialization retries (40001), which the pgx adapter already classifies
+as retryable.
 
 ## Database schemas
 

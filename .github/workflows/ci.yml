@@ -27,13 +27,34 @@ jobs:
         options: >-
           --health-cmd "mysqladmin ping -uroot -proot --silent"
           --health-interval 5s --health-timeout 3s --health-retries 30
+      mariadb:
+        image: mariadb:10.11
+        env:
+          MARIADB_ROOT_PASSWORD: root
+          MARIADB_DATABASE: sorm_test
+        ports: ["3307:3306"]
+        options: >-
+          --health-cmd "healthcheck.sh --connect --innodb_initialized"
+          --health-interval 5s --health-timeout 3s --health-retries 30
 
     env:
       SORM_TEST_DSN: postgres://postgres:postgres@localhost:5432/sorm_test
       SORM_TEST_MYSQL_DSN: root:root@tcp(localhost:3306)/sorm_test?parseTime=true
+      SORM_TEST_MARIADB_DSN: root:root@tcp(localhost:3307)/sorm_test?parseTime=true
+      SORM_TEST_CRDB_DSN: postgres://root@localhost:26257/sorm_test?sslmode=disable
 
     steps:
       - uses: actions/checkout@v4
+
+      # CockroachDB cannot run as a service (needs a start command).
+      - name: Start CockroachDB
+        run: |
+          docker run -d --name crdb -p 26257:26257 cockroachdb/cockroach:latest-v24.1 start-single-node --insecure
+          for i in $(seq 1 30); do
+            docker exec crdb ./cockroach sql --insecure -e 'SELECT 1' >/dev/null 2>&1 && break
+            sleep 2
+          done
+          docker exec crdb ./cockroach sql --insecure -e 'CREATE DATABASE sorm_test'
       - uses: actions/setup-go@v5
         with:
           go-version: "1.25"

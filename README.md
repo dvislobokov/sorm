@@ -31,7 +31,7 @@ err := s.SaveChanges(ctx)    // diff → topo-sort → batch → one transaction
 | **Relations** | hasMany / belongsTo / hasOne / many2many; eager loading with filters, child ordering and arbitrary nesting; `EXISTS` filters in both directions |
 | **Projections** | GroupBy / Having, typed aggregates, relation-based and arbitrary joins, scanning into your own structs |
 | **Migrations** | embedded diff engine (Atlas SDK, no external CLI): declarative `Apply`/`Plan` and versioned files with `Diff`/`Up`/`Down`, checksums and an advisory lock against racing replicas |
-| **Three databases** | PostgreSQL (pgx, single-roundtrip batches), MySQL, SQLite — one code path, pluggable adapters |
+| **Five databases** | PostgreSQL (pgx, single-roundtrip batches), MySQL, SQLite, MariaDB, CockroachDB — one code path, pluggable adapters |
 | **Production plumbing** | `RunInTx` with transient-error retries, typed `ConstraintError`s, `Instrument` middleware, OpenTelemetry tracing (`otelsorm`) |
 
 The escape hatches are first-class: `ToSQL()` shows the exact SQL of any
@@ -135,5 +135,5 @@ unless you say `AllRows()`, and every query can be inspected with `ToSQL()`.
 ## Status
 
 Under active development; the API may change before v1. Every commit runs
-the full test suite against PostgreSQL 17, MySQL 8 and SQLite (including
+the full test suite against PostgreSQL 17, MySQL 8, MariaDB 10.11, CockroachDB 24 and SQLite (including
 the race detector) in CI.

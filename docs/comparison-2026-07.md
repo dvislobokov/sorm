@@ -27,7 +27,7 @@
 | Наблюдаемость (OTel) | ✅ спаны+глубокие метрики+именование запросов | ⚠️ otelgorm (спаны) | ⚠️ contrib | ✅ хорошая | ❌ |
 | Производительность чтения | ✅ ~1.1× от raw | ❌ ~2× | ⚠️ ~1.4× | ✅ близко к raw | ✅ = raw |
 | Батчинг записи | ✅ multi-VALUES + pgx.Batch (1 roundtrip) | ⚠️ CreateInBatches | ⚠️ | ✅ | ⚠️ |
-| Диалекты | ⚠️ 3 (PG/MySQL/SQLite) | ✅ 5+ (и SQL Server, ClickHouse...) | ⚠️ 3+ | ⚠️ 4 | ✅ PG/MySQL/SQLite |
+| Диалекты | ✅ 5 (PG/MySQL/SQLite/MariaDB/CockroachDB) | ✅ 5+ (и SQL Server, ClickHouse...) | ⚠️ 3+ | ⚠️ 4 | ✅ PG/MySQL/SQLite |
 | Экосистема/зрелость | ❌ новый, 1 мейнтейнер | ✅ огромная | ✅ большая (Meta) | ⚠️ средняя | ✅ большая |
 
 ---
