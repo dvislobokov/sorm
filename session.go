@@ -102,7 +102,7 @@ func (s *Session) SaveChangesTx(ctx context.Context, tx Tx) error {
 
 type anyStore interface {
 	collectAdded(set map[any]bool)
-	buildPlan(p *flushPlan) error
+	buildPlan(ctx context.Context, p *flushPlan) error
 }
 
 type rec[E any] struct {

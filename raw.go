@@ -95,6 +95,9 @@ func (q RawQuery[T]) All(ctx context.Context) ([]*T, error) {
 		if err := rows.Scan(row...); err != nil {
 			return nil, fmt.Errorf("sorm: raw scan: %w", err)
 		}
+		if err := afterLoad(ctx, any(e)); err != nil {
+			return nil, fmt.Errorf("sorm: after load: %w", err)
+		}
 		out = append(out, e)
 	}
 	return out, rows.Err()

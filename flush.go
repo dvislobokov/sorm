@@ -64,7 +64,7 @@ func (s *Session) flush(ctx context.Context, db DB) (post func(), err error) {
 	// Pass 2: statements and validation (before hitting the DB).
 	// Stores are traversed by type name: deterministic plan.
 	for _, st := range storesSorted(s) {
-		if err := st.buildPlan(p); err != nil {
+		if err := st.buildPlan(ctx, p); err != nil {
 			return nil, err
 		}
 	}
@@ -267,7 +267,7 @@ func orderDeletes(stmts []planStmt, refs map[string][]string) []planStmt {
 
 // --- buildPlan for a specific type ---
 
-func (t *tracker[E]) buildPlan(p *flushPlan) error {
+func (t *tracker[E]) buildPlan(ctx context.Context, p *flushPlan) error {
 	m := t.meta
 	p.tableRefs[m.Table] = m.RefTables
 
@@ -280,6 +280,9 @@ func (t *tracker[E]) buildPlan(p *flushPlan) error {
 		}
 		if _, wasAdded := t.added[e]; wasAdded {
 			continue
+		}
+		if err := beforeSave(ctx, any(e), SaveDelete); err != nil {
+			return err
 		}
 		pk := m.PKValue(e)
 		if _, tracked := t.byPK[pk]; !tracked && isZero(pk) {
@@ -302,11 +305,17 @@ func (t *tracker[E]) buildPlan(p *flushPlan) error {
 		if len(idxs) == 0 {
 			continue
 		}
-		// autoUpdate stamps only effective updates: the diff is re-taken so the
-		// timestamp column joins the changed set.
+		// BeforeSave fires only for effective updates; the diff is re-taken
+		// afterwards so hook and autoUpdate mutations join the changed set.
+		if err := beforeSave(ctx, any(r.e), SaveUpdate); err != nil {
+			return err
+		}
 		if m.TouchUpdate != nil {
 			m.TouchUpdate(r.e, p.now)
-			idxs = m.Diff(r.snap, r.e)
+		}
+		idxs = m.Diff(r.snap, r.e)
+		if len(idxs) == 0 {
+			continue
 		}
 		t.planUpdate(p, r, idxs)
 	}
@@ -318,6 +327,9 @@ func (t *tracker[E]) buildPlan(p *flushPlan) error {
 		}
 		if _, cancelled := t.removed[e]; cancelled {
 			continue
+		}
+		if err := beforeSave(ctx, any(e), SaveInsert); err != nil {
+			return err
 		}
 		if err := t.planInsert(p, e); err != nil {
 			return err

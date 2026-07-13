@@ -154,6 +154,13 @@ func (q QueryBuilder[E]) All(ctx context.Context) ([]*E, error) {
 		}
 	}
 
+	// AfterLoad hook — per materialized row, on the canonical pointer.
+	for _, e := range out {
+		if err := afterLoad(ctx, any(e)); err != nil {
+			return nil, fmt.Errorf("sorm: after load %s: %w", q.meta.Table, err)
+		}
+	}
+
 	for _, spec := range q.includes {
 		if err := spec.load(ctx, q.db, q.sess, out); err != nil {
 			return nil, fmt.Errorf("sorm: select %s: %w", q.meta.Table, err)
@@ -197,6 +204,10 @@ func (q QueryBuilder[E]) Iter(ctx context.Context) iter.Seq2[*E, error] {
 			}
 			if q.sess != nil {
 				e = storeOf[E](q.sess).trackScanned(e)
+			}
+			if err := afterLoad(ctx, any(e)); err != nil {
+				yield(nil, fmt.Errorf("sorm: after load %s: %w", q.meta.Table, err))
+				return
 			}
 			if !yield(e, nil) {
 				return

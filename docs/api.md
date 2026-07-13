@@ -129,6 +129,15 @@ func (s Set[E]) Remove(entities ...*E)
 func (s Set[E]) Find(ctx, pk any) (*E, error) // identity map first, then SELECT
 ```
 
+### Lifecycle hooks (optional interfaces on models)
+
+```go
+type BeforeSaver interface { BeforeSave(ctx, op SaveOp) error } // insert/update/delete planning; error aborts the flush
+type AfterLoader interface { AfterLoad(ctx) error }             // per materialized row (All/One/Iter/Raw)
+// SaveOp: SaveInsert | SaveUpdate | SaveDelete
+// set-based Update/Delete/Upsert bypass hooks
+```
+
 ### Schemas
 
 ```go

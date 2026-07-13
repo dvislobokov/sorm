@@ -6,8 +6,10 @@ package testmodels
 //go:generate go run github.com/dvislobokov/sorm/cmd/sorm gen .
 
 import (
+	"context"
 	"database/sql/driver"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -137,10 +139,28 @@ type Device struct {
 
 // Comment is the nullable-FK side: PostID may be NULL (a detached comment).
 // Exercises pointer-FK navigation: value-keyed relation maps and
-// address-of FK fixup on insert.
+// address-of FK fixup on insert. It also implements both lifecycle hooks.
 type Comment struct {
 	ID     int64  `sorm:"pk,auto"`
 	PostID *int64 `sorm:"fk:Post.ID"`
 	Post   *Post  `sorm:"belongsTo:PostID"`
 	Body   string
+	// Loaded is not a column: set by AfterLoad.
+	Loaded bool `sorm:"-"`
+}
+
+// BeforeSave normalizes the body and vetoes a marker value — exercises
+// mutation (persisted: the diff is re-taken) and flush abortion.
+func (c *Comment) BeforeSave(_ context.Context, op sorm.SaveOp) error {
+	if c.Body == "!!veto!!" {
+		return fmt.Errorf("comment veto on %s", op)
+	}
+	c.Body = strings.TrimSpace(c.Body)
+	return nil
+}
+
+// AfterLoad marks materialized entities.
+func (c *Comment) AfterLoad(context.Context) error {
+	c.Loaded = true
+	return nil
 }

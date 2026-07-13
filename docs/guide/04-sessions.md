@@ -148,6 +148,36 @@ never `Add`ed and has no key, is a clear error message rather than a
 database constraint violation. Cyclic graphs of new entities are rejected
 with `sorm.ErrCyclicGraph`.
 
+## Lifecycle hooks
+
+Optional interfaces on model types — detected with a plain interface
+assertion, no codegen or registration:
+
+```go
+func (m *Message) BeforeSave(ctx context.Context, op sorm.SaveOp) error {
+    if op == sorm.SaveInsert && m.Text == "" {
+        return errors.New("empty message")  // aborts the flush, nothing hits the DB
+    }
+    m.Text = strings.TrimSpace(m.Text)      // mutations are persisted
+    return nil
+}
+
+func (m *Message) AfterLoad(ctx context.Context) error {
+    m.Preview = preview(m.Text)             // computed, non-column (sorm:"-") fields
+    return nil
+}
+```
+
+- `BeforeSave(ctx, op)` fires during `SaveChanges` **planning** — before
+  any SQL: for every insert and delete, and for updates only when the
+  entity actually changed (the diff is re-taken afterwards, so hook
+  mutations are written; auto-timestamps stamp after the hook). An error
+  aborts the whole flush.
+- `AfterLoad(ctx)` fires for every materialized row: `All`/`One`/`Iter`,
+  `Raw`/`RawAs` (when the target type implements it).
+- Set-based statements (`Update`/`Delete`/`Upsert` builders) **bypass**
+  hooks — the same rule as EF Core's `ExecuteUpdate`/`ExecuteDelete`.
+
 ## Optimistic concurrency
 
 Declare a version field once:
