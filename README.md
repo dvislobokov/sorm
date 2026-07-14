@@ -1,5 +1,9 @@
 # sorm
 
+[![CI](https://github.com/dvislobokov/sorm/actions/workflows/ci.yml/badge.svg)](https://github.com/dvislobokov/sorm/actions/workflows/ci.yml)
+[![Go Reference](https://pkg.go.dev/badge/github.com/dvislobokov/sorm.svg)](https://pkg.go.dev/github.com/dvislobokov/sorm)
+[![Go Report Card](https://goreportcard.com/badge/github.com/dvislobokov/sorm)](https://goreportcard.com/report/github.com/dvislobokov/sorm)
+
 **The first Go ORM with a real Unit of Work.**
 
 Load a graph of entities, mutate them with plain Go assignments, call
